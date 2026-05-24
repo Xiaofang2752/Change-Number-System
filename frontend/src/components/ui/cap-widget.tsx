@@ -81,6 +81,7 @@ const CapWidget = forwardRef<HTMLDivElement, CapWidgetProps>(
       onReset,
       onProgress,
       style,
+      className,
       ...props
     },
     ref,
@@ -193,6 +194,7 @@ const CapWidget = forwardRef<HTMLDivElement, CapWidgetProps>(
 
     return (
       <div
+        className={`w-full max-w-full overflow-hidden ${className || ""}`}
         style={
           {
             "--cap-background": "var(--background)",
@@ -203,6 +205,7 @@ const CapWidget = forwardRef<HTMLDivElement, CapWidgetProps>(
             "--cap-checkbox-background": "var(--secondary)",
             "--cap-spinner-color": "var(--primary)",
             "--cap-spinner-background-color": "var(--primary-foreground)",
+            "--cap-widget-width": "100%",
             ...style,
           } as React.CSSProperties
         }
@@ -210,6 +213,7 @@ const CapWidget = forwardRef<HTMLDivElement, CapWidgetProps>(
       >
         <cap-widget
           ref={widgetRef}
+          style={{ width: "100%", maxWidth: "100%", display: "block" }}
           data-cap-api-endpoint={endpoint}
           data-cap-worker-count={workerCount}
           data-cap-i18n-verifying-label={locale?.verifying}

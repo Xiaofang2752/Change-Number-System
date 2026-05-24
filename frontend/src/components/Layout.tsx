@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShieldCheck, Activity, LogOut, LayoutDashboard, Database, Settings, LogIn, FileText } from 'lucide-react';
+import { ShieldCheck, LogOut, LayoutDashboard, Database, Settings, LogIn, FileText } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface LayoutProps {
@@ -37,10 +37,12 @@ export function Layout({ children }: LayoutProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <Link to="/" className="flex items-center gap-2 group">
-                <div className="w-8 h-8 rounded-lg clinical-gradient flex items-center justify-center text-white shadow-lg shadow-primary/20 transition-transform group-hover:scale-105">
-                  <Activity size={18} />
-                </div>
+              <Link to="/" className="flex items-center gap-3 group">
+                <img
+                  src="/company-logo.svg"
+                  alt="公司 Logo"
+                  className="h-10 w-auto max-w-[120px] rounded-lg border border-slate-200 shadow-sm transition-transform group-hover:scale-105 object-contain"
+                />
                 <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600">
                   自动取号系统
                 </h1>
