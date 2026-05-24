@@ -305,7 +305,7 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
           </div>
         </div>
       </CardHeader>
-      <CardContent className="relative pt-6 space-y-6">
+      <CardContent className="relative pt-6 px-4 sm:px-6 space-y-6">
         {error && (
           <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-destructive/40 text-destructive px-5 py-4 rounded-lg mb-4 shadow-md animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="flex items-start gap-2">
@@ -315,32 +315,34 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
           </div>
         )}
         {result && (
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400/60 text-green-700 px-5 py-5 rounded-lg mb-4 shadow-lg animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">✅</span>
-                <div>
-                  <div className="text-sm font-semibold text-green-800">✓ 生成的编号</div>
-                  <div className="font-bold text-xl text-green-900 mt-1 font-mono tracking-wide">{result}</div>
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400/60 text-green-700 px-3.5 sm:px-4 py-3 sm:py-3.5 rounded-lg mb-4 shadow-lg animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center justify-between gap-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] sm:text-xs font-semibold text-green-800 uppercase tracking-wider flex items-center gap-1.5 select-none">
+                  <span>✅</span>
+                  <span>生成的编号</span>
+                </div>
+                <div className="font-bold text-sm sm:text-base text-green-900 mt-1 font-mono tracking-wide whitespace-nowrap select-all" title={result}>
+                  {result}
                 </div>
               </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-10 w-10 p-0 shrink-0 border-green-400 hover:bg-green-100 hover:border-green-500 transition-all"
+                className="h-8.5 w-8.5 p-0 shrink-0 border-green-400 hover:bg-green-100 hover:border-green-500 transition-all flex items-center justify-center"
                 onClick={() => copyToClipboard(result)}
                 title="点击复制"
               >
                 {copiedNumber === result ? (
-                  <Check className="h-5 w-5 text-green-600" />
+                  <Check className="h-4 w-4 text-green-600" />
                 ) : (
-                  <Copy className="h-5 w-5 text-green-600" />
+                  <Copy className="h-4 w-4 text-green-600" />
                 )}
               </Button>
             </div>
             {copiedNumber === result && (
-              <div className="text-xs text-green-700 mt-2 font-medium bg-green-100/50 px-2 py-1 rounded inline-block">
+              <div className="text-[10px] text-green-700 mt-2 font-medium bg-green-100/50 px-2 py-0.5 rounded inline-block">
                 ✓ 已复制到剪贴板
               </div>
             )}

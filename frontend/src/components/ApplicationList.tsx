@@ -225,13 +225,14 @@ export function ApplicationList() {
         </div>
 
         {showAdvancedFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 p-4 bg-muted/30 rounded-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-3 mb-6 p-4 bg-muted/30 rounded-lg text-xs md:text-sm">
             <div className="space-y-2">
               <label className="text-sm font-medium">开始日期</label>
               <Input
                 type="date"
                 value={filters.start_date}
                 onChange={(e) => setFilters(prev => ({ ...prev, start_date: e.target.value }))}
+                className="w-full text-xs md:text-sm h-10 px-2 md:px-3"
               />
             </div>
             <div className="space-y-2">
@@ -240,6 +241,7 @@ export function ApplicationList() {
                 type="date"
                 value={filters.end_date}
                 onChange={(e) => setFilters(prev => ({ ...prev, end_date: e.target.value }))}
+                className="w-full text-xs md:text-sm h-10 px-2 md:px-3"
               />
             </div>
             <div className="space-y-2">
@@ -247,7 +249,7 @@ export function ApplicationList() {
               <select
                 value={filters.project_code}
                 onChange={(e) => setFilters(prev => ({ ...prev, project_code: e.target.value }))}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-2 md:px-3 py-2 text-xs md:text-sm"
               >
                 <option value="">所有项目</option>
                 {projects.map(p => (
@@ -260,7 +262,7 @@ export function ApplicationList() {
               <select
                 value={filters.number_type}
                 onChange={(e) => setFilters(prev => ({ ...prev, number_type: e.target.value }))}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-2 md:px-3 py-2 text-xs md:text-sm"
               >
                 <option value="">所有类型</option>
                 {numberTypes.map(nt => (
@@ -275,6 +277,7 @@ export function ApplicationList() {
                 placeholder="输入申请人姓名"
                 value={filters.applicant_name}
                 onChange={(e) => setFilters(prev => ({ ...prev, applicant_name: e.target.value }))}
+                className="w-full text-xs md:text-sm h-10 px-2 md:px-3"
               />
             </div>
             {isAdmin && (
@@ -285,6 +288,7 @@ export function ApplicationList() {
                   placeholder="输入 IP 地址"
                   value={filters.ip_address}
                   onChange={(e) => setFilters(prev => ({ ...prev, ip_address: e.target.value }))}
+                  className="w-full text-xs md:text-sm h-10 px-2 md:px-3"
                 />
               </div>
             )}
@@ -297,7 +301,79 @@ export function ApplicationList() {
           <div className="text-center py-10 text-muted-foreground">暂无申请记录</div>
         ) : (
           <>
-            <div className="overflow-x-auto rounded-md border mb-6">
+            {/* 移动端/窄屏卡片列表：在小屏幕或窄宽度下完全自适应，无需滚动条 */}
+            <div className="md:hidden space-y-4 mb-6">
+              {applications.map(app => {
+                const recent = isRecent(app.created_at);
+                return (
+                  <div
+                    key={app.id}
+                    className={cn(
+                      'p-4 rounded-xl border-2 transition-all hover:shadow-md bg-white space-y-3 relative overflow-hidden',
+                      recent ? 'border-blue-500 bg-yellow-50/30' : 'border-border/60'
+                    )}
+                  >
+                    {recent && (
+                      <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500" />
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(app.full_number)}
+                        className="inline-flex items-center gap-1.5 group cursor-pointer hover:bg-muted rounded px-2 py-1 transition-colors"
+                        title="点击复制"
+                      >
+                        <Badge variant="default" className="text-xs font-mono tracking-wide">{app.full_number}</Badge>
+                        {copiedNumber === app.full_number ? (
+                          <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5 text-muted-foreground opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
+                        )}
+                      </button>
+                      <Badge variant="secondary" className="text-[10px] md:text-xs">{app.number_type}</Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground pt-1 border-t border-dashed border-border/80">
+                      <div>
+                        <span className="font-medium text-foreground">申请人:</span> {app.applicant_name}
+                      </div>
+                      <div>
+                        <span className="font-medium text-foreground">项目代号:</span> {app.project_code}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <span>🕒</span>
+                        <span>{formatBeijingTime(app.created_at)}</span>
+                      </span>
+                      {isAdmin && (
+                        <span className="bg-muted px-2 py-0.5 rounded text-[10px] font-mono">
+                          {app.ip_address || '-'}
+                        </span>
+                      )}
+                    </div>
+
+                    {isAdmin && (
+                      <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(app.id)}
+                            onChange={(e) => handleSelectOne(app.id, e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                          <span className="text-xs">选择该项</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 桌面端表格：在中大屏幕下正常以表格方式展示，保证大屏幕的最佳排版 */}
+            <div className="hidden md:block overflow-x-auto rounded-md border mb-6">
               <table className="w-full">
                 <thead className="bg-muted">
                   <tr>
@@ -309,12 +385,12 @@ export function ApplicationList() {
                         className="h-4 w-4 rounded border-gray-300"
                       />
                     </th>}
-                    <th className="h-12 px-4 text-left font-medium whitespace-nowrap">完整编号</th>
-                    <th className="h-12 px-4 text-left font-medium whitespace-nowrap">申请人</th>
-                    <th className="h-12 px-4 text-left font-medium whitespace-nowrap">项目代号</th>
-                    <th className="h-12 px-4 text-left font-medium whitespace-nowrap">编号类型</th>
-                    <th className="h-12 px-4 text-left font-medium whitespace-nowrap">申请时间</th>
-                        {isAdmin && <th className="h-12 px-4 text-left font-medium whitespace-nowrap hidden sm:table-cell">IP 地址</th>}
+                    <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">完整编号</th>
+                    <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">申请人</th>
+                    <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">项目代号</th>
+                    <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">编号类型</th>
+                    <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">申请时间</th>
+                        {isAdmin && <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap hidden sm:table-cell">IP 地址</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -329,7 +405,7 @@ export function ApplicationList() {
                         )}
                       >
                         {isAdmin && (
-                          <td className="p-4 whitespace-nowrap">
+                          <td className="p-4 text-xs md:text-sm whitespace-nowrap">
                             <input
                               type="checkbox"
                               checked={selectedIds.includes(app.id)}
@@ -338,14 +414,14 @@ export function ApplicationList() {
                             />
                           </td>
                         )}
-                        <td className="p-4 font-medium whitespace-nowrap">
+                        <td className="p-4 font-medium text-xs md:text-sm whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => copyToClipboard(app.full_number)}
                             className="inline-flex items-center gap-1.5 group cursor-pointer hover:bg-muted rounded px-1 py-0.5 transition-colors"
                             title="点击复制"
                           >
-                            <Badge variant="default">{app.full_number}</Badge>
+                            <Badge variant="default" className="text-xs md:text-sm">{app.full_number}</Badge>
                             {copiedNumber === app.full_number ? (
                               <Check className="h-3 w-3 text-green-600 shrink-0" />
                             ) : (
@@ -356,15 +432,15 @@ export function ApplicationList() {
                             <div className="text-xs text-green-600 mt-0.5">已复制</div>
                           )}
                         </td>
-                        <td className="p-4 whitespace-nowrap">{app.applicant_name}</td>
-                        <td className="p-4 whitespace-nowrap">{app.project_code}</td>
-                        <td className="p-4 whitespace-nowrap">
-                          <Badge variant="secondary">{app.number_type}</Badge>
+                        <td className="p-4 text-xs md:text-sm whitespace-nowrap">{app.applicant_name}</td>
+                        <td className="p-4 text-xs md:text-sm whitespace-nowrap">{app.project_code}</td>
+                        <td className="p-4 text-xs md:text-sm whitespace-nowrap">
+                          <Badge variant="secondary" className="text-xs md:text-sm">{app.number_type}</Badge>
                         </td>
-                        <td className="p-4 text-muted-foreground whitespace-nowrap">
+                        <td className="p-4 text-xs md:text-sm text-muted-foreground whitespace-nowrap">
                           {formatBeijingTime(app.created_at)}
                         </td>
-                        {isAdmin && <td className="p-4 text-muted-foreground whitespace-nowrap hidden sm:table-cell">{app.ip_address || '-'}</td>}
+                        {isAdmin && <td className="p-4 text-xs md:text-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">{app.ip_address || '-'}</td>}
                       </tr>
                     );
                   })}

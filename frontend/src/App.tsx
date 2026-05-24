@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { Home } from './pages/Home';
+import { GuideTenQnA } from './pages/GuideTenQnA';
 import { AdminLogin } from './pages/AdminLogin';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { ReviewPage } from './pages/ReviewPage';
@@ -17,6 +18,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/guide/ten-qna" element={<GuideTenQnA />} />
           <Route
             path="/admin/dashboard"
             element={
