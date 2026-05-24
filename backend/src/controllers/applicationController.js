@@ -165,15 +165,9 @@ function getApplications(req, res) {
     const whereClauses = [];
     const params = [];
 
-    // 如果指定了申请人姓名，且非管理员，则只能查看该申请人的记录
-    if (applicant_name && !req.isAdmin) {
-      whereClauses.push('applicant_name = ?');
-      params.push(applicant_name);
-    }
-
-    // 管理员可以通过高级筛选指定申请人姓名
-    if (applicant_name && req.isAdmin) {
-      whereClauses.push('applicant_name LIKE ?');
+    // 申请人姓名过滤（模糊匹配，忽略大小写，对所有用户一致）
+    if (applicant_name) {
+      whereClauses.push('LOWER(applicant_name) LIKE LOWER(?)');
       params.push(`%${applicant_name}%`);
     }
 
