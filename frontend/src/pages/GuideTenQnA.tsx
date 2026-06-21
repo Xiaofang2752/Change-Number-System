@@ -77,7 +77,7 @@ export function GuideTenQnA() {
 				<div>
 					<p>参考QST-MS04-01-001-R003《变更影响评估表》：</p>
 					<ul className="list-disc ml-5">
-						<li>若变更导致成本下降：填写“整机BOM无增加”；</li>
+						<li>若变更导致成本下降：填写“整机 BOM 成本无增加”；</li>
 						<li>若成本上升：按实际金额填写（如“整机 BOM 成本增加 XX 元”）。</li>
 					</ul>
 				</div>
