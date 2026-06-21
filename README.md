@@ -180,7 +180,7 @@ docker logs -f change-number-system
 bash scripts/docker/login.sh
 
 # 构建并推送
-bash scripts/docker/build-and-push.sh v1.5.0
+bash scripts/docker/build-and-push.sh v1.6.0
 ```
 
 ### GitHub Actions 配置
