@@ -52,12 +52,25 @@ export function ApplicationList() {
       }
 
       const [appsRes, statsRes] = await Promise.all([
-        applicationAPI.getAll({ ...apiFilters, page: pagination.page, limit: pagination.limit }),
+        applicationAPI.getAll({ ...apiFilters, exclude_type: 'QTD,HISTORICAL', page: pagination.page, limit: pagination.limit }),
         applicationAPI.getStats(),
       ]);
       setApplications((appsRes as { data: { data: Application[]; pagination: typeof pagination } }).data?.data || []);
       setPagination((appsRes as { data: { data: Application[]; pagination: typeof pagination } }).data?.pagination || pagination);
-      setStats((statsRes as { data: StatsData }).data || null);
+      
+      const rawStats = (statsRes as { data: StatsData }).data || null;
+      if (rawStats) {
+        const filteredByType = (rawStats.byType || []).filter(item => item.number_type !== 'QTD' && item.number_type !== 'HISTORICAL');
+        const qtdCount = (rawStats.byType || []).find(item => item.number_type === 'QTD')?.count || 0;
+        const historicalCount = (rawStats.byType || []).find(item => item.number_type === 'HISTORICAL')?.count || 0;
+        setStats({
+          ...rawStats,
+          total: rawStats.total - qtdCount - historicalCount,
+          byType: filteredByType,
+        });
+      } else {
+        setStats(null);
+      }
     } catch (err) {
       console.error('加载数据失败', err);
     } finally {
@@ -73,7 +86,8 @@ export function ApplicationList() {
         numberTypeAPI.getAll('approved'),
       ]);
       setProjects((projectsRes as { data: Project[] }).data || []);
-      setNumberTypes((numberTypesRes as { data: NumberType[] }).data || []);
+      const rawTypes = (numberTypesRes as { data: NumberType[] }).data || [];
+      setNumberTypes(rawTypes.filter(nt => nt.type_code !== 'QTD'));
     } catch (err) {
       console.error('加载筛选选项失败', err);
     }
@@ -98,11 +112,12 @@ export function ApplicationList() {
     // 重置到第一页
     setPagination(prev => ({ ...prev, page: 1 }));
     
+    const value = e.target.value;
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
     searchTimeoutRef.current = setTimeout(() => {
-      setFilters(prev => ({ ...prev, keyword: e.target.value }));
+      setFilters(prev => ({ ...prev, keyword: value }));
     }, 300);
   };
 

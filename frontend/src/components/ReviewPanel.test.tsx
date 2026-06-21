@@ -4,6 +4,15 @@ import { ReviewPage } from '../pages/ReviewPage';
 import * as services from '../services';
 import { MemoryRouter } from 'react-router-dom';
 
+const mockNavigate = vi.hoisted(() => vi.fn());
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 vi.mock('../services', () => ({
   projectAPI: {
     getPending: vi.fn(),
@@ -57,7 +66,9 @@ describe('ReviewPage 组件测试', () => {
   it('应该正确渲染审核页面', async () => {
     renderWithRouter(<ReviewPage />);
 
-    expect(screen.getByText('审核管理')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('审核管理')).toBeInTheDocument();
+    });
   });
 
   it('应该加载待审核的项目申请', async () => {
@@ -183,19 +194,10 @@ describe('ReviewPage 组件测试', () => {
 
   it('非管理员应该被重定向到登录页', () => {
     localStorage.removeItem('isAdmin');
-    const mockNavigate = vi.fn();
-    
-    vi.mock('react-router-dom', async () => {
-      const actual = await vi.importActual('react-router-dom');
-      return {
-        ...actual,
-        useNavigate: () => mockNavigate,
-      };
-    });
+    mockNavigate.mockClear();
 
     renderWithRouter(<ReviewPage />);
 
-    // 注意：由于 mock 限制，这个测试主要验证逻辑而非实际导航
-    expect(localStorage.getItem('isAdmin')).not.toBe('true');
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/login');
   });
 });

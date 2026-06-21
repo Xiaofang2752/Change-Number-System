@@ -43,6 +43,19 @@ db.exec(`
   );
 `);
 
+// 创建技术文件关键字表
+db.exec(`
+  CREATE TABLE IF NOT EXISTS technical_document_keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword TEXT UNIQUE NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'approved' CHECK(status IN ('approved', 'pending', 'rejected')),
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    approved_at DATETIME
+  );
+`);
+
 // 迁移: 移除 number_types.type_name 的 NOT NULL 约束
 // SQLite 不支持直接 DROP CONSTRAINT, 需要重建表
 function migrateNumberTypes() {
@@ -103,12 +116,27 @@ function migrateNumberTypes() {
 
 migrateNumberTypes();
 
+function migrateApplicationsTable() {
+  try {
+    const columns = db.prepare(`PRAGMA table_info('applications')`).all();
+    const hasDocumentName = columns.some((column) => column.name === 'document_name');
+    if (!hasDocumentName) {
+      console.log('Migrating applications table to add document_name column...');
+      db.exec(`ALTER TABLE applications ADD COLUMN document_name TEXT`);
+      console.log('applications table migration completed');
+    }
+  } catch (err) {
+    console.error('Migration applications table error:', err.message);
+  }
+}
+
 // 创建申请记录表
-db.exec(`
+ db.exec(`
   CREATE TABLE IF NOT EXISTS applications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     applicant_name TEXT NOT NULL,
     applicant_type TEXT,
+    document_name TEXT,
     project_code TEXT NOT NULL,
     number_type TEXT NOT NULL,
     serial_number INTEGER NOT NULL,
@@ -117,6 +145,8 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+
+migrateApplicationsTable();
 
 // 创建用户项目代号申请表
 db.exec(`
@@ -185,6 +215,48 @@ db.exec(`
   );
 `);
 
+// 创建变更进度表
+db.exec(`
+  CREATE TABLE IF NOT EXISTS change_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_code TEXT,
+    cr_no TEXT,
+    dcp_no TEXT,
+    cn_no TEXT,
+    change_description TEXT,
+    affects_regulation INTEGER DEFAULT 0, -- 0 for No, 1 for Yes
+    regulation_content TEXT,
+    cr_progress TEXT,
+    cn_progress TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+// 动态迁移：若存在 change_progress 表但没有 project_code 列，则添加
+const changeProgressInfo = db.prepare("PRAGMA table_info(change_progress)").all();
+const hasProjectCode = changeProgressInfo.some(col => col.name === 'project_code');
+if (!hasProjectCode) {
+  try {
+    db.exec("ALTER TABLE change_progress ADD COLUMN project_code TEXT;");
+    console.log("Successfully migrated change_progress table: added project_code column.");
+  } catch (err) {
+    console.error("Migration error for change_progress table:", err);
+  }
+}
+
+// 创建贡献者表
+db.exec(`
+  CREATE TABLE IF NOT EXISTS contributors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    points INTEGER DEFAULT 0,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 // 插入预设数据
 const insertProject = db.prepare(`
   INSERT OR IGNORE INTO projects (code, name, status, approved_at)
@@ -194,6 +266,11 @@ const insertProject = db.prepare(`
 const insertNumberType = db.prepare(`
   INSERT OR IGNORE INTO number_types (type_code, type_name, description, status, approved_at)
   VALUES (?, ?, '', 'approved', CURRENT_TIMESTAMP)
+`);
+
+const insertContributor = db.prepare(`
+  INSERT OR IGNORE INTO contributors (name, points, description)
+  VALUES (?, ?, ?)
 `);
 
 // 事务插入预设数据
@@ -206,6 +283,11 @@ const insertPresets = db.transaction(() => {
   insertNumberType.run('DCP', 'Design Change Proposal');
   insertNumberType.run('CN', 'Change Notice');
   insertNumberType.run('TD', 'Technical Document');
+  insertNumberType.run('QTD', 'Quaero Technical Document');
+
+  insertContributor.run('张三', 10, '反馈了变更流程的卡顿问题，协助优化了用户体验');
+  insertContributor.run('李四', 8, '对DCP/CR/CN取号生成规则提出了修正意见，修正了历史遗留逻辑Bug');
+  insertContributor.run('王五', 5, '提供了Excel模板快速填充的合理化格式改进建议');
 
   // 插入默认功能开关（默认关闭）
   const insertSetting = db.prepare(`

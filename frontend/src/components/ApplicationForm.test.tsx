@@ -3,6 +3,55 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ApplicationForm } from './ApplicationForm';
 import * as services from '../services';
 
+import { useEffect } from 'react';
+
+// Mock CapVerification to auto-solve in tests
+vi.mock('./CapVerification', () => ({
+  CapVerification: ({ onSolve }: any) => {
+    useEffect(() => {
+      onSolve('mock-token');
+    }, []);
+    return null;
+  }
+}));
+
+// Mock Select component from Radix UI
+vi.mock('./ui/select', () => {
+  const React = require('react');
+  const SelectContext = React.createContext({});
+
+  return {
+    Select: ({ children, value, onValueChange }: any) => {
+      return React.createElement(
+        SelectContext.Provider,
+        { value: { value, onValueChange } },
+        React.createElement('div', null, children)
+      );
+    },
+    SelectTrigger: ({ children }: any) => {
+      return React.createElement('button', { type: 'button' }, children);
+    },
+    SelectValue: ({ placeholder }: any) => {
+      const context = React.useContext(SelectContext);
+      return React.createElement('span', null, context.value || placeholder);
+    },
+    SelectContent: ({ children }: any) => {
+      return React.createElement('div', null, children);
+    },
+    SelectItem: ({ children, value }: any) => {
+      const context = React.useContext(SelectContext);
+      return React.createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => context.onValueChange?.(value),
+        },
+        children
+      );
+    },
+  };
+});
+
 // Mock services
 vi.mock('../services', () => ({
   projectAPI: {
@@ -15,6 +64,10 @@ vi.mock('../services', () => ({
   },
   applicationAPI: {
     create: vi.fn(),
+  },
+  settingsAPI: {
+    getFeatureToggles: vi.fn().mockResolvedValue({ data: { allow_request_project: true, allow_request_number_type: true } }),
+    getCooldown: vi.fn().mockResolvedValue({ data: { cooldown_seconds: 10 } }),
   },
 }));
 
@@ -40,7 +93,7 @@ describe('ApplicationForm 组件测试', () => {
     render(<ApplicationForm />);
 
     expect(screen.getByPlaceholderText('请输入申请人姓名')).toBeInTheDocument();
-    expect(screen.getByText('编号申请')).toBeInTheDocument();
+    expect(screen.getByText('变更编号申请')).toBeInTheDocument();
   });
 
   it('应该加载项目和编号类型数据', async () => {
@@ -66,21 +119,21 @@ describe('ApplicationForm 组件测试', () => {
   it('应该显示申请新项目弹窗', async () => {
     render(<ApplicationForm />);
 
-    const requestProjectBtn = screen.getByText('申请新项目');
+    const requestProjectBtn = await screen.findByText(/申请新项目/);
     fireEvent.click(requestProjectBtn);
 
-    expect(screen.getByPlaceholderText('项目代号')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('项目名称')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/项目代号/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/项目名称/)).toBeInTheDocument();
   });
 
   it('应该显示申请新编号类型弹窗', async () => {
     render(<ApplicationForm />);
 
-    const requestNumberTypeBtn = screen.getByText('申请新编号类型');
+    const requestNumberTypeBtn = await screen.findByText(/申请新类型/);
     fireEvent.click(requestNumberTypeBtn);
 
-    expect(screen.getByPlaceholderText('类型代码')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('类型名称')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/类型代码/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/类型名称/)).toBeInTheDocument();
   });
 
   it('应该成功提交申请', async () => {
@@ -100,7 +153,7 @@ describe('ApplicationForm 组件测试', () => {
     fireEvent.click(projectTrigger);
 
     await waitFor(() => {
-      const projectOption = screen.getByText('ALPHA01 - Alpha Project');
+      const projectOption = screen.getByText('ALPHA01');
       fireEvent.click(projectOption);
     });
 
@@ -109,31 +162,55 @@ describe('ApplicationForm 组件测试', () => {
     fireEvent.click(numberTypeTrigger);
 
     await waitFor(() => {
-      const numberTypeOption = screen.getByText('CR - Change Request');
+      const numberTypeOption = screen.getAllByText('CR - Change Request')[0];
       fireEvent.click(numberTypeOption);
     });
 
     // 提交表单
     const submitButton = screen.getByText('提交申请');
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
+    });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(services.applicationAPI.create).toHaveBeenCalledWith({
-        applicant_name: '张三',
-        project_code: 'ALPHA01',
-        number_type: 'CR',
-      });
+      expect(services.applicationAPI.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          applicant_name: '张三',
+          project_code: 'ALPHA01',
+          number_type: 'CR',
+        })
+      );
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/✓ 生成的编号: CR-ALPHA01-0001/)).toBeInTheDocument();
+      expect(screen.getByText('CR-ALPHA01-0001')).toBeInTheDocument();
     });
   });
 
   it('应该显示表单验证错误', async () => {
     render(<ApplicationForm />);
 
+    await waitFor(() => {
+      const applicantInput = screen.getByPlaceholderText('请输入申请人姓名');
+      fireEvent.change(applicantInput, { target: { value: '张三' } });
+      expect(applicantInput).toHaveValue('张三');
+    });
+
+    // 模拟选择项目
+    const projectTrigger = screen.getByText('请选择项目');
+    fireEvent.click(projectTrigger);
+
+    await waitFor(() => {
+      const projectOption = screen.getByText('ALPHA01');
+      fireEvent.click(projectOption);
+    });
+
+    // 不选择编号类型，直接提交表单
     const submitButton = screen.getByText('提交申请');
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
+    });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
@@ -153,8 +230,33 @@ describe('ApplicationForm 组件测试', () => {
       fireEvent.change(applicantInput, { target: { value: '张三' } });
     });
 
+    // 模拟选择项目
+    const projectTrigger = screen.getByText('请选择项目');
+    fireEvent.click(projectTrigger);
+
+    await waitFor(() => {
+      const projectOption = screen.getByText('ALPHA01');
+      fireEvent.click(projectOption);
+    });
+
+    // 模拟选择编号类型
+    const numberTypeTrigger = screen.getByText('请选择编号类型');
+    fireEvent.click(numberTypeTrigger);
+
+    await waitFor(() => {
+      const numberTypeOption = screen.getAllByText('CR - Change Request')[0];
+      fireEvent.click(numberTypeOption);
+    });
+
     const submitButton = screen.getByText('提交申请');
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
+    });
     fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('CR-ALPHA01-0001')).toBeInTheDocument();
+    });
 
     await waitFor(() => {
       const cachedUser = JSON.parse(localStorage.getItem('userInfo') || '{}');

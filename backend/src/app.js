@@ -14,9 +14,12 @@ require('./db/init');
 const projectsRouter = require('./routes/projects');
 const numberTypesRouter = require('./routes/number-types');
 const applicationsRouter = require('./routes/applications');
+const technicalDocumentRouter = require('./routes/technical-documents');
 const adminRouter = require('./routes/admin');
 const capRouter = require('./routes/cap');
 const settingsRouter = require('./routes/settings');
+const changeProgressRouter = require('./routes/change-progress');
+const contributorsRouter = require('./routes/contributors');
 const { initializeDefaultAdmin } = require('./controllers/adminController');
 
 const app = express();
@@ -52,9 +55,12 @@ app.get('/api/health', (req, res) => {
 // 路由
 app.use('/api/projects', projectsRouter);
 app.use('/api/number-types', numberTypesRouter);
+app.use('/api/technical-documents', technicalDocumentRouter);
 app.use('/api/applications', applicationsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/change-progress', changeProgressRouter);
+app.use('/api/contributors', contributorsRouter);
 app.use('/cap', capRouter);
 
 // 错误处理

@@ -39,6 +39,10 @@ export function AdminApplicationsPage() {
     end_date: searchParams.get('end_date') || '',
   });
 
+  const [activeTab, setActiveTab] = useState<'change_management' | 'technical_document'>(
+    (searchParams.get('tab') as 'change_management' | 'technical_document') || 'change_management'
+  );
+
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: Number(searchParams.get('page')) || 1, limit: 20, total: 0, totalPages: 0 });
@@ -58,6 +62,7 @@ export function AdminApplicationsPage() {
   // 同步筛选参数到 URL（防抖）
   const syncFiltersToURL = useCallback((newFilters: Filters) => {
     const params = new URLSearchParams();
+    params.set('tab', activeTab);
     if (newFilters.keyword) params.set('keyword', newFilters.keyword);
     if (newFilters.applicant_name) params.set('applicant_name', newFilters.applicant_name);
     if (newFilters.project_code) params.set('project_code', newFilters.project_code);
@@ -69,12 +74,12 @@ export function AdminApplicationsPage() {
     if (sortBy) params.set('sort_by', sortBy);
     if (sortOrder) params.set('sort_order', sortOrder);
     setSearchParams(params);
-  }, [pagination.page, sortBy, sortOrder, setSearchParams]);
+  }, [pagination.page, sortBy, sortOrder, activeTab, setSearchParams]);
 
-  // 当防抖的筛选状态变化时，同步到 URL
+  // 当防抖的筛选状态或标签变化时，同步到 URL
   useEffect(() => {
     syncFiltersToURL(debouncedFilters);
-  }, [debouncedFilters, syncFiltersToURL]);
+  }, [debouncedFilters, activeTab, syncFiltersToURL]);
 
   // 组件卸载时清理定时器
   useEffect(() => {
@@ -93,21 +98,24 @@ export function AdminApplicationsPage() {
     }
   }, [navigate]);
 
-  // 加载数据
-  useEffect(() => {
-    loadData();
-  }, [pagination.page, debouncedFilters, sortBy, sortOrder]);
-
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await applicationAPI.getAll({
+      const apiFilters: any = {
         ...debouncedFilters,
         page: pagination.page,
         limit: pagination.limit,
         sort_by: sortBy,
         sort_order: sortOrder,
-      });
+      };
+
+      if (activeTab === 'change_management') {
+        apiFilters.exclude_type = 'QTD,HISTORICAL';
+      } else {
+        apiFilters.number_type = debouncedFilters.number_type || 'QTD,HISTORICAL';
+      }
+
+      const res = await applicationAPI.getAll(apiFilters);
       const data = (res as { data: { data: Application[]; pagination: typeof pagination } }).data;
       setApplications(data?.data || []);
       setPagination(data?.pagination || pagination);
@@ -118,7 +126,30 @@ export function AdminApplicationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedFilters, pagination.page, pagination.limit, sortBy, sortOrder]);
+  }, [debouncedFilters, pagination.page, pagination.limit, sortBy, sortOrder, activeTab]);
+
+  // 加载数据
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // 切换标签
+  const handleTabChange = (tab: 'change_management' | 'technical_document') => {
+    setActiveTab(tab);
+    setPagination(prev => ({ ...prev, page: 1 }));
+    setSelectedIds([]);
+    const clearedFilters = {
+      keyword: '',
+      applicant_name: '',
+      project_code: '',
+      number_type: '',
+      ip_address: '',
+      start_date: '',
+      end_date: '',
+    };
+    setFilters(clearedFilters);
+    setDebouncedFilters(clearedFilters);
+  };
 
   // 单条删除
   const handleDelete = async (id: number, applicantName: string) => {
@@ -289,12 +320,39 @@ export function AdminApplicationsPage() {
   return (
     <Layout>
       <div className="max-w-7xl mx-auto p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">申请记录管理</h2>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">申请记录管理</h2>
+          
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80 shadow-sm w-fit">
+            <button
+              onClick={() => handleTabChange('change_management')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-200 select-none ${
+                activeTab === 'change_management'
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              变更管理 (DCP/CR/CN/TD)
+            </button>
+            <button
+              onClick={() => handleTabChange('technical_document')}
+              className={`px-4.5 py-2 text-xs font-bold rounded-lg transition-all duration-200 select-none ${
+                activeTab === 'technical_document'
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              技术文件 (QTD/历史文档)
+            </button>
+          </div>
+        </div>
 
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle>所有申请记录</CardTitle>
+              <CardTitle>
+                {activeTab === 'change_management' ? '变更管理申请记录' : '技术文件申请/导入记录'}
+              </CardTitle>
               {selectedIds.length > 0 && (
                 <div className="flex items-center gap-3 bg-primary/10 px-4 py-2 rounded-lg animate-in fade-in slide-in-from-top-2">
                   <span className="text-sm font-medium text-primary">
