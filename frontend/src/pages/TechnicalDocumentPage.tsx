@@ -60,7 +60,8 @@ export function TechnicalDocumentPage() {
   const loadRecords = async () => {
     setLoading(true);
     try {
-      const params: any = { number_type: 'QTD,HISTORICAL', page: pagination.page, limit: pagination.limit };
+      type ApplicationAPIParams = Parameters<typeof applicationAPI.getAll>[0];
+      const params: ApplicationAPIParams = { number_type: 'QTD,HISTORICAL', page: pagination.page, limit: pagination.limit };
       if (filterKeyword.trim()) {
         params.project_code = filterKeyword.trim();
       }
