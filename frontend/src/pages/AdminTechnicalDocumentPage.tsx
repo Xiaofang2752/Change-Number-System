@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { technicalDocumentAPI, projectAPI } from '../services';
 import type { TechnicalDocumentKeyword, Project } from '../services';
 import { Layout } from '../components/Layout';
+
+interface ImportResult {
+  imported: string[];
+  skipped: string[];
+  errors: string[];
+}
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -24,7 +30,7 @@ export function AdminTechnicalDocumentPage() {
   const [editKeyword, setEditKeyword] = useState<TechnicalDocumentKeyword | null>(null);
   const [editForm, setEditForm] = useState({ keyword: '', description: '' });
   const [importText, setImportText] = useState('');
-  const [importResult, setImportResult] = useState<{ imported: string[]; skipped: any[]; errors: any[] } | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileInfo, setFileInfo] = useState<string | null>(null);
@@ -138,13 +144,15 @@ export function AdminTechnicalDocumentPage() {
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
           
-          const jsonData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
-          
+          const jsonData = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(worksheet, {
+            header: 1,
+          });
+
           const lines = jsonData
-            .map((row: any) => {
+            .map((row) => {
               if (!Array.isArray(row)) return '';
-              const code = String(row[0] || '').trim();
-              const name = String(row[1] || '').trim();
+              const code = String(row[0] ?? '').trim();
+              const name = String(row[1] ?? '').trim();
               if (!code) return '';
               return name ? `${code},${name}` : code;
             })
@@ -232,7 +240,7 @@ export function AdminTechnicalDocumentPage() {
         applicant_name: importerName.trim(),
         project_code: selectedProjectCode,
       });
-      setImportResult((res as { data: { imported: string[]; skipped: any[]; errors: any[] } }).data);
+      setImportResult((res as { data: ImportResult }).data);
       setImportText('');
       setFileInfo(null);
       loadKeywords();
