@@ -185,7 +185,10 @@ bash scripts/docker/build-and-push.sh v1.6.0
 
 ### GitHub Actions 配置
 
-推送代码到 main 分支或创建 release 时，会自动构建并推送到阿里云镜像仓库。
+推送代码到 main 分支或创建 release 时，会自动构建并推送镜像到阿里云镜像仓库和 GitHub Container Registry。
+
+- 阿里云镜像仓库：使用 `ALiYUN_CR_USERNAME` / `ALIYUN_CR_PASSWORD` 进行登录。
+- GitHub Container Registry：使用默认 `GITHUB_TOKEN` 登录，无需额外秘钥。
 
 需要配置以下内容：
 
