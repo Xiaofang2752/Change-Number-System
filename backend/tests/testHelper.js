@@ -30,8 +30,10 @@ const { setTestDb } = require('../src/db/connection');
 const projectsRouter = require('../src/routes/projects');
 const numberTypesRouter = require('../src/routes/number-types');
 const applicationsRouter = require('../src/routes/applications');
+const technicalDocumentsRouter = require('../src/routes/technical-documents');
 const adminRouter = require('../src/routes/admin');
 const settingsRouter = require('../src/routes/settings');
+const contributorsRouter = require('../src/routes/contributors');
 
 /**
  * 创建测试用 Express 应用
@@ -46,9 +48,11 @@ function createTestApp() {
   // 路由
   app.use('/api/projects', projectsRouter);
   app.use('/api/number-types', numberTypesRouter);
+  app.use('/api/technical-documents', technicalDocumentsRouter);
   app.use('/api/applications', applicationsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/settings', settingsRouter);
+  app.use('/api/contributors', contributorsRouter);
 
   return app;
 }
