@@ -11,6 +11,9 @@ env:
   REGISTRY: ${{ vars.DOCKER_REGISTRY }}
   IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME }}
   FULL_IMAGE_NAME: ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE_NAME }}
+  GHCR_REGISTRY: ghcr.io
+  GHCR_IMAGE_NAME: ${{ github.repository_owner }}/${{ vars.DOCKER_IMAGE_NAME }}
+  GHCR_FULL_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ vars.DOCKER_IMAGE_NAME }}
 
 jobs:
   # Job 1: Lint and Test
@@ -81,6 +84,13 @@ jobs:
           username: ${{ secrets.ALIYUN_CR_USERNAME }}
           password: ${{ secrets.ALIYUN_CR_PASSWORD }}
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -92,5 +102,8 @@ jobs:
             ${{ env.FULL_IMAGE_NAME }}:latest
             ${{ env.FULL_IMAGE_NAME }}:${{ steps.version.outputs.TAG }}
             ${{ env.FULL_IMAGE_NAME }}:${{ steps.git_sha.outputs.SHA }}
+            ${{ env.GHCR_FULL_IMAGE_NAME }}:latest
+            ${{ env.GHCR_FULL_IMAGE_NAME }}:${{ steps.version.outputs.TAG }}
+            ${{ env.GHCR_FULL_IMAGE_NAME }}:${{ steps.git_sha.outputs.SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
