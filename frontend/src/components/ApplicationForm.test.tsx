@@ -1,13 +1,16 @@
+import React, { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ApplicationForm } from './ApplicationForm';
 import * as services from '../services';
 
-import { useEffect } from 'react';
-
 // Mock CapVerification to auto-solve in tests
+interface CapVerificationProps {
+  onSolve: (token: string) => void;
+}
+
 vi.mock('./CapVerification', () => ({
-  CapVerification: ({ onSolve }: any) => {
+  CapVerification: ({ onSolve }: CapVerificationProps) => {
     useEffect(() => {
       onSolve('mock-token');
     }, []);
@@ -17,28 +20,32 @@ vi.mock('./CapVerification', () => ({
 
 // Mock Select component from Radix UI
 vi.mock('./ui/select', () => {
-  const React = require('react');
-  const SelectContext = React.createContext({});
+  type SelectContextType = {
+    value?: string;
+    onValueChange?: (value: string) => void;
+  };
+
+  const SelectContext = React.createContext<SelectContextType>({});
 
   return {
-    Select: ({ children, value, onValueChange }: any) => {
+    Select: ({ children, value, onValueChange }: { children: React.ReactNode; value?: string; onValueChange?: (value: string) => void }) => {
       return React.createElement(
         SelectContext.Provider,
         { value: { value, onValueChange } },
         React.createElement('div', null, children)
       );
     },
-    SelectTrigger: ({ children }: any) => {
+    SelectTrigger: ({ children }: { children: React.ReactNode }) => {
       return React.createElement('button', { type: 'button' }, children);
     },
-    SelectValue: ({ placeholder }: any) => {
+    SelectValue: ({ placeholder }: { placeholder?: string }) => {
       const context = React.useContext(SelectContext);
       return React.createElement('span', null, context.value || placeholder);
     },
-    SelectContent: ({ children }: any) => {
+    SelectContent: ({ children }: { children: React.ReactNode }) => {
       return React.createElement('div', null, children);
     },
-    SelectItem: ({ children, value }: any) => {
+    SelectItem: ({ children, value }: { children: React.ReactNode; value?: string }) => {
       const context = React.useContext(SelectContext);
       return React.createElement(
         'button',

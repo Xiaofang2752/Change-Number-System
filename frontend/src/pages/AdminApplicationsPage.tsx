@@ -28,6 +28,8 @@ export function AdminApplicationsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  type ApplicationAPIParams = Parameters<typeof applicationAPI.getAll>[0];
+
   // 从 URL 参数初始化筛选条件
   const getInitialFilters = (): Filters => ({
     keyword: searchParams.get('keyword') || '',
@@ -101,7 +103,7 @@ export function AdminApplicationsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const apiFilters: any = {
+      const apiFilters: ApplicationAPIParams = {
         ...debouncedFilters,
         page: pagination.page,
         limit: pagination.limit,
