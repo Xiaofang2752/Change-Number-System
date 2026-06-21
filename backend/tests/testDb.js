@@ -46,10 +46,23 @@ function initTestSchema(db) {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS technical_document_keywords (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      keyword TEXT UNIQUE NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'approved' CHECK(status IN ('approved', 'pending', 'rejected')),
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      approved_at DATETIME
+    );
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS applications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       applicant_name TEXT NOT NULL,
       applicant_type TEXT,
+      document_name TEXT,
       project_code TEXT NOT NULL,
       number_type TEXT NOT NULL,
       serial_number INTEGER NOT NULL,
@@ -112,6 +125,17 @@ function initTestSchema(db) {
   `);
   insertSetting.run('allow_request_project', 'false', '允许用户申请新项目代号');
   insertSetting.run('allow_request_number_type', 'false', '允许用户申请新编号类型');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contributors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      points INTEGER DEFAULT 0,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 }
 
 /**

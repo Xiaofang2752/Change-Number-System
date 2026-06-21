@@ -114,7 +114,8 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
           numberTypeAPI.getAll('approved,pending'),
         ]);
         setProjects((projectsRes as { data: ProjectItem[] }).data || []);
-        setNumberTypes((numberTypesRes as { data: NumberTypeItem[] }).data || []);
+        const rawTypes = (numberTypesRes as { data: NumberTypeItem[] }).data || [];
+        setNumberTypes(rawTypes.filter(nt => nt.type_code !== 'QTD'));
       } catch {
         setError('加载数据失败');
       }
@@ -299,9 +300,9 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
           </div>
           <div>
             <CardTitle className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
-              编号申请
+              变更编号申请
             </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">快速生成您的专属编号</p>
+            <p className="text-sm text-muted-foreground mt-1">DCP/CR/CN/TD取号</p>
           </div>
         </div>
       </CardHeader>

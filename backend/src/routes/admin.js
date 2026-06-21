@@ -13,10 +13,10 @@ router.post('/logout', authMiddleware, adminController.logout);
 // 修改管理员密码 (需要认证)
 router.post('/change-password', authMiddleware, adminController.changePassword);
 
-// 删除单条申请记录 (需要认证)
-router.delete('/applications/:id', authMiddleware, applicationController.deleteApplication);
-
 // 批量删除申请记录 (需要认证)
 router.delete('/applications/batch', authMiddleware, applicationController.batchDeleteApplications);
+
+// 删除单条申请记录 (需要认证)
+router.delete('/applications/:id', authMiddleware, applicationController.deleteApplication);
 
 module.exports = router;

@@ -34,9 +34,13 @@ function generateSerialNumber(db, numberType, projectCode) {
 }
 
 /**
- * 格式化流水号为 4 位
+ * 格式化流水号
  */
-function formatSerialNumber(serial) {
+function formatSerialNumber(serial, numberType, projectCode) {
+  if (numberType === 'QTD') {
+    const width = projectCode ? 4 : 6;
+    return String(serial).padStart(width, '0');
+  }
   return String(serial).padStart(4, '0');
 }
 
@@ -45,10 +49,18 @@ function formatSerialNumber(serial) {
  */
 async function createApplication(req, res) {
   try {
-    const { applicant_name, project_code, number_type, capToken } = req.body;
+    const { applicant_name, document_name = '', project_code = '', number_type, applicant_type, capToken } = req.body;
 
-    if (!applicant_name || !project_code || !number_type) {
-      return errorResponse(res, 400, '申请人、项目代号和编号类型不能为空');
+    if (!applicant_name || !number_type) {
+      return errorResponse(res, 400, '申请人和编号类型不能为空');
+    }
+
+    if (number_type === 'QTD' && !document_name.trim()) {
+      return errorResponse(res, 400, '文档名称不能为空');
+    }
+
+    if (number_type !== 'QTD' && !project_code) {
+      return errorResponse(res, 400, '项目代号不能为空');
     }
 
     // 人机验证（如果提供了 capToken）
@@ -80,19 +92,47 @@ async function createApplication(req, res) {
       }
     }
 
-    // 验证项目代号是否存在（允许 approved 和 pending 状态）
-    const project = db.prepare(
-      'SELECT * FROM projects WHERE code = ? AND status IN (?, ?)'
-    ).get(project_code, 'approved', 'pending');
-    if (!project) {
-      // 检查是否是 rejected 状态
-      const rejectedProject = db.prepare(
-        'SELECT * FROM projects WHERE code = ? AND status = ?'
-      ).get(project_code, 'rejected');
-      if (rejectedProject) {
-        return errorResponse(res, 400, '该项目代号未通过审核，无法提交申请');
+    // 验证项目代号 / QTD 关键字是否存在
+    if (number_type === 'QTD') {
+      if (project_code) {
+        const validProject = db.prepare(
+          'SELECT * FROM projects WHERE code = ? AND status IN (?, ?)'
+        ).get(project_code, 'approved', 'pending');
+        const validKeyword = db.prepare(
+          'SELECT * FROM technical_document_keywords WHERE keyword = ? AND status IN (?, ?)'
+        ).get(project_code, 'approved', 'pending');
+
+        if (!validProject && !validKeyword) {
+          const rejectedProject = db.prepare(
+            'SELECT * FROM projects WHERE code = ? AND status = ?'
+          ).get(project_code, 'rejected');
+          if (rejectedProject) {
+            return errorResponse(res, 400, '该项目代号未通过审核，无法提交申请');
+          }
+
+          const rejectedKeyword = db.prepare(
+            'SELECT * FROM technical_document_keywords WHERE keyword = ? AND status = ?'
+          ).get(project_code, 'rejected');
+          if (rejectedKeyword) {
+            return errorResponse(res, 400, '该 QTD 关键字未通过审核，无法提交申请');
+          }
+
+          return errorResponse(res, 400, 'QTD 关键字不存在');
+        }
       }
-      return errorResponse(res, 400, '项目代号不存在');
+    } else {
+      const project = db.prepare(
+        'SELECT * FROM projects WHERE code = ? AND status IN (?, ?)'
+      ).get(project_code, 'approved', 'pending');
+      if (!project) {
+        const rejectedProject = db.prepare(
+          'SELECT * FROM projects WHERE code = ? AND status = ?'
+        ).get(project_code, 'rejected');
+        if (rejectedProject) {
+          return errorResponse(res, 400, '该项目代号未通过审核，无法提交申请');
+        }
+        return errorResponse(res, 400, '项目代号不存在');
+      }
     }
 
     // 验证编号类型是否存在（允许 approved 和 pending 状态）
@@ -112,16 +152,18 @@ async function createApplication(req, res) {
 
     // 生成流水号
     const serialNumber = generateSerialNumber(db, number_type, project_code);
-    const formattedSerial = formatSerialNumber(serialNumber);
-    const fullNumber = `${number_type}-${project_code}-${formattedSerial}`;
+    const formattedSerial = formatSerialNumber(serialNumber, number_type, project_code);
+    const fullNumber = number_type === 'QTD' && !project_code
+      ? `${number_type}-${formattedSerial}`
+      : `${number_type}-${project_code}-${formattedSerial}`;
 
     // 获取 IP
     const ipAddress = getClientIP(req);
 
     // 插入记录
     const result = db.prepare(
-      'INSERT INTO applications (applicant_name, applicant_type, project_code, number_type, serial_number, full_number, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(applicant_name, '', project_code, number_type, serialNumber, fullNumber, ipAddress);
+      'INSERT INTO applications (applicant_name, applicant_type, document_name, project_code, number_type, serial_number, full_number, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)' 
+    ).run(applicant_name, applicant_type || '', document_name || '', project_code, number_type, serialNumber, fullNumber, ipAddress);
 
     const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(result.lastInsertRowid);
     return successResponse(res, application, '申请成功');
@@ -136,7 +178,7 @@ async function createApplication(req, res) {
  */
 function getApplications(req, res) {
   try {
-    const { page = 1, limit = 10, keyword, project_code, number_type, start_date, end_date, applicant_type, applicant_name, ip_address, sort_by, sort_order } = req.query;
+    const { page = 1, limit = 10, keyword, project_code, number_type, exclude_type, start_date, end_date, applicant_type, applicant_name, ip_address, sort_by, sort_order } = req.query;
     const db = getDatabase();
 
     // 排序字段白名单校验
@@ -173,9 +215,9 @@ function getApplications(req, res) {
 
     // 关键字搜索
     if (keyword) {
-      whereClauses.push('(applicant_name LIKE ? OR project_code LIKE ? OR full_number LIKE ?)');
+      whereClauses.push('(applicant_name LIKE ? OR project_code LIKE ? OR full_number LIKE ? OR document_name LIKE ?)');
       const keywordParam = `%${keyword}%`;
-      params.push(keywordParam, keywordParam, keywordParam);
+      params.push(keywordParam, keywordParam, keywordParam, keywordParam);
     }
 
     // 项目代号过滤（模糊匹配，忽略大小写）
@@ -184,10 +226,34 @@ function getApplications(req, res) {
       params.push(`%${project_code}%`);
     }
 
-    // 编号类型过滤（模糊匹配，忽略大小写）
+    // 编号类型过滤（支持逗号分隔的多个类型，或者单个类型的模糊匹配）
     if (number_type) {
-      whereClauses.push('LOWER(number_type) LIKE LOWER(?)');
-      params.push(`%${number_type}%`);
+      if (number_type.includes(',')) {
+        const typeList = number_type.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+        if (typeList.length > 0) {
+          const placeholders = typeList.map(() => '?').join(', ');
+          whereClauses.push(`LOWER(number_type) IN (${placeholders})`);
+          params.push(...typeList);
+        }
+      } else {
+        whereClauses.push('LOWER(number_type) LIKE LOWER(?)');
+        params.push(`%${number_type}%`);
+      }
+    }
+
+    // 编号类型排除过滤（支持逗号分隔的多个类型，或者单个类型的排除）
+    if (exclude_type) {
+      if (exclude_type.includes(',')) {
+        const excludeTypes = exclude_type.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+        if (excludeTypes.length > 0) {
+          const placeholders = excludeTypes.map(() => '?').join(', ');
+          whereClauses.push(`LOWER(number_type) NOT IN (${placeholders})`);
+          params.push(...excludeTypes);
+        }
+      } else {
+        whereClauses.push('LOWER(number_type) != LOWER(?)');
+        params.push(exclude_type);
+      }
     }
 
     // 申请人类型过滤（模糊匹配，忽略大小写）
@@ -330,12 +396,13 @@ function exportCSV(req, res) {
     const applications = db.prepare('SELECT * FROM applications ORDER BY created_at DESC').all();
 
     // CSV 头部
-    const headers = ['ID', '申请人', '申请人类型', '项目代号', '编号类型', '流水号', '完整编号', 'IP 地址', '申请时间'];
+    const headers = ['ID', '申请人', '文档名称', '申请人类型', '项目代号', '编号类型', '流水号', '完整编号', 'IP 地址', '申请时间'];
     
     // CSV 内容
     const rows = applications.map(app => [
       app.id,
       app.applicant_name,
+      app.document_name || '',
       app.applicant_type || '',
       app.project_code,
       app.number_type,
