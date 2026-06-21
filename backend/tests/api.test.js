@@ -23,6 +23,7 @@ describe('后端 API 基础测试', () => {
       
       expect(tableNames).toContain('projects');
       expect(tableNames).toContain('number_types');
+      expect(tableNames).toContain('technical_document_keywords');
       expect(tableNames).toContain('applications');
       expect(tableNames).toContain('admins');
     });
@@ -96,6 +97,38 @@ describe('后端 API 基础测试', () => {
     });
   });
 
+  describe('技术文件关键字 API', () => {
+    test('管理员应该能够创建和获取关键字', async () => {
+      const createRes = await request(app)
+        .post('/api/technical-documents/keywords')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ keyword: 'TESTKEY', description: '测试关键字' });
+      expect(createRes.status).toBe(200);
+      expect(createRes.body.success).toBe(true);
+      expect(createRes.body.data.keyword).toBe('TESTKEY');
+
+      const listRes = await request(app).get('/api/technical-documents/keywords');
+      expect(listRes.status).toBe(200);
+      expect(listRes.body.success).toBe(true);
+      expect(listRes.body.data.some((item) => item.keyword === 'TESTKEY')).toBe(true);
+    });
+
+    test('管理员应该能够导入现有 QTD 编号', async () => {
+      // 确保没有关键字也能导入无关键字 QTD 编号
+      const importRes = await request(app)
+        .post('/api/technical-documents/import')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          entries: ['QTD-000001'],
+          project_code: 'ALPHA01',
+          applicant_name: '管理员'
+        });
+      expect(importRes.status).toBe(200);
+      expect(importRes.body.success).toBe(true);
+      expect(importRes.body.data.imported).toContain('QTD-000001');
+    });
+  });
+
   describe('申请记录 API', () => {
     test('用户应该能够提交申请', async () => {
       // 先创建必要的数据
@@ -112,6 +145,82 @@ describe('后端 API 基础测试', () => {
       
       expect(res.status).toBe(200);
       expect(res.body.data.full_number).toContain('CR-ALPHA01');
+    });
+
+    test('QTD 申请应保存文档名称', async () => {
+      db.prepare("INSERT INTO technical_document_keywords (keyword, status) VALUES ('ALPHA01', 'approved')").run();
+      db.prepare("INSERT INTO number_types (type_code, type_name) VALUES ('QTD', 'Technical Document')").run();
+
+      const res = await request(app)
+        .post('/api/applications')
+        .send({
+          applicant_name: '技术用户',
+          document_name: 'DHF 文档示例',
+          project_code: 'ALPHA01',
+          number_type: 'QTD'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.full_number).toContain('QTD-ALPHA01');
+      expect(res.body.data.document_name).toBe('DHF 文档示例');
+    });
+  });
+
+  describe('贡献者 API', () => {
+    test('应该能够获取贡献者列表且按积分排序', async () => {
+      // 插入两个测试贡献者
+      db.prepare("INSERT INTO contributors (name, points, description) VALUES ('测试A', 10, 'A description')").run();
+      db.prepare("INSERT INTO contributors (name, points, description) VALUES ('测试B', 20, 'B description')").run();
+
+      const res = await request(app).get('/api/contributors');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      // 测试B（20分）应该排在测试A（10分）前面
+      const indexA = res.body.data.findIndex(c => c.name === '测试A');
+      const indexB = res.body.data.findIndex(c => c.name === '测试B');
+      expect(indexB).toBeLessThan(indexA);
+    });
+
+    test('管理员应该能够创建贡献者', async () => {
+      const res = await request(app)
+        .post('/api/contributors')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: '新贡献者', points: 15, description: '测试贡献' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.name).toBe('新贡献者');
+      expect(res.body.data.points).toBe(15);
+    });
+
+    test('管理员应该能够更新贡献者', async () => {
+      db.prepare("INSERT INTO contributors (name, points, description) VALUES ('更新测试', 5, 'old')").run();
+      const cont = db.prepare("SELECT id FROM contributors WHERE name = '更新测试'").get();
+
+      const res = await request(app)
+        .put(`/api/contributors/${cont.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: '更新测试新', points: 30, description: 'new' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.name).toBe('更新测试新');
+      expect(res.body.data.points).toBe(30);
+    });
+
+    test('管理员应该能够删除贡献者', async () => {
+      db.prepare("INSERT INTO contributors (name, points) VALUES ('删除测试', 5)").run();
+      const cont = db.prepare("SELECT id FROM contributors WHERE name = '删除测试'").get();
+
+      const res = await request(app)
+        .delete(`/api/contributors/${cont.id}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      const check = db.prepare("SELECT * FROM contributors WHERE id = ?").get(cont.id);
+      expect(check).toBeUndefined();
     });
   });
 });

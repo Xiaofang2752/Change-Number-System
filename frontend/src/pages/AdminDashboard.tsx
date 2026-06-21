@@ -222,6 +222,24 @@ export function AdminDashboard() {
                   <span>编号类型管理</span>
                 </Button>
               </Link>
+              <Link to="/admin/technical-documents">
+                <Button variant="outline" className="w-full h-20 flex flex-col items-center justify-center gap-2">
+                  <span className="text-2xl">🧾</span>
+                  <span>技术文件管理</span>
+                </Button>
+              </Link>
+              <Link to="/admin/change-progress">
+                <Button variant="outline" className="w-full h-20 flex flex-col items-center justify-center gap-2">
+                  <span className="text-2xl">📈</span>
+                  <span>变更进度管理</span>
+                </Button>
+              </Link>
+              <Link to="/admin/contributors">
+                <Button variant="outline" className="w-full h-20 flex flex-col items-center justify-center gap-2">
+                  <span className="text-2xl">🏆</span>
+                  <span>贡献者荣誉榜管理</span>
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>

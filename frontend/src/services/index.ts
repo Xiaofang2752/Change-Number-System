@@ -26,16 +26,43 @@ export interface NumberType {
   user_id?: string;
 }
 
+export interface TechnicalDocumentKeyword {
+  id: number;
+  keyword: string;
+  description?: string;
+  status: string;
+  created_by?: string;
+  created_at: string;
+  approved_at?: string;
+}
+
 export interface Application {
   id: number;
   applicant_name: string;
   applicant_type?: string;
+  document_name?: string;
   project_code: string;
   number_type: string;
   serial_number: number;
   full_number: string;
   ip_address?: string;
   created_at: string;
+}
+
+export interface ChangeProgress {
+  id: number;
+  project_code?: string;
+  project_name?: string;
+  cr_no: string;
+  dcp_no: string;
+  cn_no: string;
+  change_description: string;
+  affects_regulation: number; // 0 or 1
+  regulation_content: string;
+  cr_progress: string;
+  cn_progress: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export const projectAPI = {
@@ -70,9 +97,9 @@ export const numberTypeAPI = {
 };
 
 export const applicationAPI = {
-  create: (data: { applicant_name: string; project_code: string; number_type: string }) =>
+  create: (data: { applicant_name: string; document_name?: string; project_code: string; number_type: string; applicant_type?: string; capToken?: string }) =>
     api.post('/applications', data),
-  getAll: (params: { page?: number; limit?: number; keyword?: string; project_code?: string; number_type?: string; start_date?: string; end_date?: string; applicant_name?: string; ip_address?: string; sort_by?: string; sort_order?: string }) => api.get('/applications', { params }),
+  getAll: (params: { page?: number; limit?: number; keyword?: string; project_code?: string; number_type?: string; exclude_type?: string; start_date?: string; end_date?: string; applicant_name?: string; ip_address?: string; sort_by?: string; sort_order?: string }) => api.get('/applications', { params }),
   getStats: () => api.get('/applications/stats'),
   delete: (id: number) => api.delete(`/applications/${id}`),
   batchDelete: (ids: number[]) => api.delete('/applications', { data: { ids } }),
@@ -105,6 +132,17 @@ export const adminAPI = {
   batchDeleteApplications: (ids: number[]) => api.delete('/admin/applications/batch', { data: { ids } }),
 };
 
+export const technicalDocumentAPI = {
+  getKeywords: (status?: string) => {
+    const params = status ? { status } : undefined;
+    return api.get('/technical-documents/keywords', { params });
+  },
+  createKeyword: (data: { keyword: string; description?: string }) => api.post('/technical-documents/keywords', data),
+  updateKeyword: (id: number, data: Partial<TechnicalDocumentKeyword>) => api.put(`/technical-documents/keywords/${id}`, data),
+  deleteKeyword: (id: number) => api.delete(`/technical-documents/keywords/${id}`),
+  import: (data: { entries: string[]; applicant_name?: string; project_code?: string }) => api.post('/technical-documents/import', data),
+};
+
 export const settingsAPI = {
   getFeatureToggles: () => api.get('/settings/feature-toggles'),
   updateFeatureToggles: (data: { allow_request_project?: boolean; allow_request_number_type?: boolean }) =>
@@ -113,3 +151,27 @@ export const settingsAPI = {
   updateCooldown: (data: { cooldown_seconds: number }) =>
     api.put('/settings/cooldown', data),
 };
+
+export const changeProgressAPI = {
+  getAll: (keyword?: string) => api.get('/change-progress', { params: { keyword } }),
+  create: (data: Partial<ChangeProgress>) => api.post('/change-progress', data),
+  update: (id: number, data: Partial<ChangeProgress>) => api.put(`/change-progress/${id}`, data),
+  delete: (id: number) => api.delete(`/change-progress/${id}`),
+};
+
+export interface Contributor {
+  id: number;
+  name: string;
+  points: number;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const contributorAPI = {
+  getAll: () => api.get('/contributors'),
+  create: (data: { name: string; points?: number; description?: string }) => api.post('/contributors', data),
+  update: (id: number, data: Partial<Contributor>) => api.put(`/contributors/${id}`, data),
+  delete: (id: number) => api.delete(`/contributors/${id}`),
+};
+

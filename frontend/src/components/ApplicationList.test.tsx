@@ -10,6 +10,12 @@ vi.mock('../services', () => ({
     exportCSV: vi.fn(),
     batchDelete: vi.fn(),
   },
+  projectAPI: {
+    getAll: vi.fn().mockResolvedValue({ data: [] }),
+  },
+  numberTypeAPI: {
+    getAll: vi.fn().mockResolvedValue({ data: [] }),
+  },
 }));
 
 describe('ApplicationList 组件测试', () => {
@@ -68,8 +74,8 @@ describe('ApplicationList 组件测试', () => {
       expect(screen.getByText('申请记录')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('张三')).toBeInTheDocument();
-    expect(screen.getByText('CR-ALPHA01-0001')).toBeInTheDocument();
+    expect(screen.getAllByText('张三')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('CR-ALPHA01-0001')[0]).toBeInTheDocument();
   });
 
   it('应该加载统计数据', async () => {
@@ -89,10 +95,17 @@ describe('ApplicationList 组件测试', () => {
   });
 
   it('应该支持关键字搜索', async () => {
+    vi.useFakeTimers();
     render(<ApplicationList />);
 
     const searchInput = screen.getByPlaceholderText('搜索申请人/项目/编号...');
     fireEvent.change(searchInput, { target: { value: '张三' } });
+
+    // Advance timers by 300ms to trigger search input debounce
+    vi.advanceTimersByTime(300);
+
+    // Restore real timers so waitFor can use real timeouts to check the result
+    vi.useRealTimers();
 
     await waitFor(() => {
       expect(services.applicationAPI.getAll).toHaveBeenCalledWith(
