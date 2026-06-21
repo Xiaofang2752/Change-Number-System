@@ -4,10 +4,15 @@ import { technicalDocumentAPI, projectAPI } from '../services';
 import type { TechnicalDocumentKeyword, Project } from '../services';
 import { Layout } from '../components/Layout';
 
+interface ImportError {
+  line: number | string;
+  reason: string;
+}
+
 interface ImportResult {
   imported: string[];
   skipped: string[];
-  errors: string[];
+  errors: ImportError[];
 }
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
