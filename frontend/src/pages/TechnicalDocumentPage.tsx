@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { TechnicalDocumentForm } from '../components/TechnicalDocumentForm';
+import { DifyChatbotEmbed } from '../components/DifyChatbotEmbed';
 import { applicationAPI } from '../services';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -158,6 +159,7 @@ export function TechnicalDocumentPage() {
 
   return (
     <Layout>
+      <DifyChatbotEmbed />
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         <div className="mb-6">
           <h1 className="text-3xl font-bold">技术文件取号</h1>
