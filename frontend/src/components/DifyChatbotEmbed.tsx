@@ -20,8 +20,9 @@ type WindowWithDify = Window &
 export function DifyChatbotEmbed() {
   useEffect(() => {
     const token = import.meta.env.VITE_DIFY_CHATBOT_TOKEN || DEFAULT_DIFY_TOKEN;
-    const baseUrl = import.meta.env.VITE_DIFY_CHATBOT_BASE_URL || DEFAULT_DIFY_BASE_URL;
-    const scriptSrc = `${baseUrl.replace(/\/$/, '')}/embed.min.js`;
+    const rawBaseUrl = import.meta.env.VITE_DIFY_CHATBOT_BASE_URL || DEFAULT_DIFY_BASE_URL;
+    const baseUrl = new URL(rawBaseUrl, window.location.origin).toString().replace(/\/$/, '');
+    const scriptSrc = `${baseUrl}/embed.min.js`;
     const difyWindow = window as WindowWithDify;
 
     difyWindow.difyChatbotConfig = {
