@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 
 const DEFAULT_DIFY_TOKEN = 'bkCgWSXgSyNhDsZ8';
-const DEFAULT_DIFY_HTTP_BASE_URL = 'http://192.168.122.193:8090';
-const DEFAULT_DIFY_HTTPS_BASE_URL = 'https://dify.quearo.lan.9992099.xyz';
+const DEFAULT_DIFY_BASE_URL = '/dify';
 
 type DifyChatbotConfig = {
   token: string;
   baseUrl: string;
+  dynamicScript: boolean;
   inputs: Record<string, unknown>;
   systemVariables: Record<string, unknown>;
   userVariables: Record<string, unknown>;
@@ -20,14 +20,14 @@ type WindowWithDify = Window &
 export function DifyChatbotEmbed() {
   useEffect(() => {
     const token = import.meta.env.VITE_DIFY_CHATBOT_TOKEN || DEFAULT_DIFY_TOKEN;
-    const defaultBaseUrl = window.location.protocol === 'https:' ? DEFAULT_DIFY_HTTPS_BASE_URL : DEFAULT_DIFY_HTTP_BASE_URL;
-    const baseUrl = import.meta.env.VITE_DIFY_CHATBOT_BASE_URL || defaultBaseUrl;
+    const baseUrl = import.meta.env.VITE_DIFY_CHATBOT_BASE_URL || DEFAULT_DIFY_BASE_URL;
     const scriptSrc = `${baseUrl.replace(/\/$/, '')}/embed.min.js`;
     const difyWindow = window as WindowWithDify;
 
     difyWindow.difyChatbotConfig = {
       token,
       baseUrl,
+      dynamicScript: true,
       inputs: {},
       systemVariables: {},
       userVariables: {},
