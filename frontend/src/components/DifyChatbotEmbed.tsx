@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 
 const DEFAULT_DIFY_TOKEN = 'bkCgWSXgSyNhDsZ8';
-const DEFAULT_DIFY_BASE_URL = '/dify';
+const DEFAULT_DIFY_BASE_URL = 'http://192.168.122.193:8090';
+const DEFAULT_DIFY_PORT = '8090';
 
 type DifyChatbotConfig = {
   token: string;
@@ -20,8 +21,16 @@ type WindowWithDify = Window &
 export function DifyChatbotEmbed() {
   useEffect(() => {
     const token = import.meta.env.VITE_DIFY_CHATBOT_TOKEN || DEFAULT_DIFY_TOKEN;
-    const rawBaseUrl = import.meta.env.VITE_DIFY_CHATBOT_BASE_URL || DEFAULT_DIFY_BASE_URL;
-    const baseUrl = new URL(rawBaseUrl, window.location.origin).toString().replace(/\/$/, '');
+    const configuredBaseUrl = import.meta.env.VITE_DIFY_CHATBOT_BASE_URL;
+    const httpsBaseUrl = import.meta.env.VITE_DIFY_CHATBOT_HTTPS_BASE_URL;
+    const baseUrl = (
+      configuredBaseUrl ||
+      (window.location.protocol === 'https:' && httpsBaseUrl
+        ? httpsBaseUrl
+        : window.location.protocol === 'http:'
+          ? `${window.location.protocol}//${window.location.hostname}:${DEFAULT_DIFY_PORT}`
+          : DEFAULT_DIFY_BASE_URL)
+    ).replace(/\/$/, '');
     const scriptSrc = `${baseUrl}/embed.min.js`;
     const difyWindow = window as WindowWithDify;
 
