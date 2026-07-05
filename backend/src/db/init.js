@@ -350,11 +350,6 @@ const insertNumberType = db.prepare(`
   VALUES (?, ?, '', 'approved', CURRENT_TIMESTAMP)
 `);
 
-const insertContributor = db.prepare(`
-  INSERT OR IGNORE INTO contributors (name, points, description)
-  VALUES (?, ?, ?)
-`);
-
 // 事务插入预设数据
 const insertPresets = db.transaction(() => {
   insertProject.run('ALPHA01', 'Alpha Project 01');
@@ -366,10 +361,6 @@ const insertPresets = db.transaction(() => {
   insertNumberType.run('CN', 'Change Notice');
   insertNumberType.run('TD', 'Technical Document');
   insertNumberType.run('QTD', 'Quaero Technical Document');
-
-  insertContributor.run('张三', 10, '反馈了变更流程的卡顿问题，协助优化了用户体验');
-  insertContributor.run('李四', 8, '对DCP/CR/CN取号生成规则提出了修正意见，修正了历史遗留逻辑Bug');
-  insertContributor.run('王五', 5, '提供了Excel模板快速填充的合理化格式改进建议');
 
   // 插入默认功能开关（默认关闭）
   const insertSetting = db.prepare(`
