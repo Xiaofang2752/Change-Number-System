@@ -43,11 +43,14 @@ export interface Application {
   document_name?: string;
   project_code: string;
   number_type: string;
+  category?: string;
+  sub_category?: string;
   serial_number: number;
   full_number: string;
   ip_address?: string;
   created_at: string;
 }
+
 
 export interface ChangeProgress {
   id: number;
@@ -97,9 +100,10 @@ export const numberTypeAPI = {
 };
 
 export const applicationAPI = {
-  create: (data: { applicant_name: string; document_name?: string; project_code: string; number_type: string; applicant_type?: string; capToken?: string }) =>
+  create: (data: { applicant_name: string; document_name?: string; project_code?: string; number_type?: string; category?: string; applicant_type?: string; capToken?: string }) =>
     api.post('/applications', data),
-  getAll: (params: { page?: number; limit?: number; keyword?: string; project_code?: string; number_type?: string; exclude_type?: string; start_date?: string; end_date?: string; applicant_name?: string; ip_address?: string; sort_by?: string; sort_order?: string }) => api.get('/applications', { params }),
+  getAll: (params: { page?: number; limit?: number; keyword?: string; project_code?: string; number_type?: string; exclude_type?: string; category?: string; start_date?: string; end_date?: string; applicant_name?: string; ip_address?: string; sort_by?: string; sort_order?: string }) => api.get('/applications', { params }),
+  update: (id: number, data: Partial<Application>) => api.put(`/applications/${id}`, data),
   getStats: () => api.get('/applications/stats'),
   delete: (id: number) => api.delete(`/applications/${id}`),
   batchDelete: (ids: number[]) => api.delete('/applications', { data: { ids } }),
@@ -157,6 +161,26 @@ export const changeProgressAPI = {
   create: (data: Partial<ChangeProgress>) => api.post('/change-progress', data),
   update: (id: number, data: Partial<ChangeProgress>) => api.put(`/change-progress/${id}`, data),
   delete: (id: number) => api.delete(`/change-progress/${id}`),
+  import: (data: { entries: Partial<ChangeProgress>[] }) =>
+    api.post('/change-progress/import', data),
+  exportCSV: async (keyword?: string) => {
+    const token = localStorage.getItem('adminToken');
+    const response = await axios.get('/api/change-progress/export', {
+      responseType: 'blob',
+      params: keyword ? { keyword } : undefined,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    const blob = new Blob([response.data]);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const date = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `change_progress_${date}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export interface Contributor {
@@ -173,5 +197,46 @@ export const contributorAPI = {
   create: (data: { name: string; points?: number; description?: string }) => api.post('/contributors', data),
   update: (id: number, data: Partial<Contributor>) => api.put(`/contributors/${id}`, data),
   delete: (id: number) => api.delete(`/contributors/${id}`),
+};
+
+// ===== 10 问 10 答管理 =====
+
+export interface GuideQna {
+  id?: number;
+  sort_order: number;
+  question: string;
+  answer: string;
+  status?: 'draft' | 'published';
+  updated_at?: string;
+}
+
+export interface GuideQnaPublished {
+  items: GuideQna[];
+  published_at: string | null;
+}
+
+export interface GuideQnaHistory {
+  id: number;
+  version_label: string;
+  content_hash_short: string;
+  published_at: string;
+}
+
+export interface GuideQnaHistoryDetail {
+  id: number;
+  version_label: string;
+  content_hash_short: string;
+  published_at: string;
+  items: { question: string; answer: string; sort_order: number }[];
+}
+
+export const guideQnaAPI = {
+  getPublished: () => api.get('/guide-qna'),
+  getDraft: () => api.get('/guide-qna/draft'),
+  saveDraft: (data: { items: Partial<GuideQna>[] }) => api.put('/guide-qna/draft', data),
+  publish: () => api.post('/guide-qna/publish', {}),
+  getHistoryList: () => api.get('/guide-qna/history'),
+  getHistoryDetail: (id: number) => api.get(`/guide-qna/history/${id}`),
+  deleteHistory: (id: number) => api.delete(`/guide-qna/history/${id}`),
 };
 

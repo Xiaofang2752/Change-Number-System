@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Map, HelpCircle, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Map, HelpCircle, ArrowRight, ChevronDown, ChevronRight, Upload, Download, FileSpreadsheet, X } from 'lucide-react';
 import { ApplicationForm } from '../components/ApplicationForm';
 import { ApplicationList } from '../components/ApplicationList';
 import { Layout } from '../components/Layout';
@@ -8,6 +8,32 @@ import { Input } from '../components/ui/input';
 import { changeProgressAPI } from '../services';
 import type { ChangeProgress } from '../services';
 import { Button } from '../components/ui/button';
+import * as XLSX from 'xlsx';
+import { useTour } from '../hooks/useTour';
+import { CHANGE_STEPS } from '../tour/steps';
+
+interface ImportError {
+  line: number | string;
+  reason: string;
+}
+
+interface ImportResult {
+  imported: { line: number; cr_no: string; dcp_no: string; cn_no: string }[];
+  skipped: { line: number; reason: string }[];
+  errors: ImportError[];
+}
+
+const TEMPLATE_HEADERS = [
+  '所属项目代号',
+  'CR No.',
+  'DCP No.',
+  'CN No.',
+  '变更描述',
+  '是否影响法规(是/否)',
+  '法规内容',
+  'CR进度',
+  'CN进度',
+];
 
 export function ChangeManagementPage() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -19,6 +45,15 @@ export function ChangeManagementPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 8;
   const [selectedProgress, setSelectedProgress] = useState<ChangeProgress | null>(null);
+
+  // 导入/导出相关状态
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const { startTour } = useTour('change', CHANGE_STEPS);
+  const [importEntries, setImportEntries] = useState<Partial<ChangeProgress>[]>([]);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [fileInfo, setFileInfo] = useState<string | null>(null);
 
   const handleApplicationSubmitted = useCallback(() => {
     setRefreshKey(prev => prev + 1);
@@ -36,9 +71,133 @@ export function ChangeManagementPage() {
     }
   }, []);
 
+  // ===== 导入/导出/模板 =====
+
+  const handleDownloadTemplate = () => {
+    const worksheetData = [
+      TEMPLATE_HEADERS,
+      ['ALPHA01', 'CR-2026-001', 'DCP-2026-001', 'CN-2026-001', '示例：电源模块变更', '否', '', '已完成', '进行中'],
+      ['BETA88', 'CR-2026-002', 'DCP-2026-002', '', '示例：软件版本升级', '是', '影响 GB9706.1 电气安全', '进行中', '未发起'],
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    worksheet['!cols'] = [
+      { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
+      { wch: 30 }, { wch: 16 }, { wch: 30 }, { wch: 14 }, { wch: 14 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '变更进度导入模板');
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', '变更进度导入模板.xlsx');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileInfo(file.name);
+    setImportResult(null);
+
+    const isCsvOrTxt = /\.(csv|txt)$/i.test(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const content = evt.target?.result;
+        if (!content) {
+          alert('文件内容为空');
+          return;
+        }
+        let rows: string[][] = [];
+        if (isCsvOrTxt) {
+          const text = String(content);
+          rows = text.split(/\r?\n/).filter(l => l.trim()).map(l => l.split(/,|，/).map(c => c.trim()));
+        } else {
+          const wb = XLSX.read(content, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' });
+        }
+        const dataRows = rows.slice(1).map(r => r.map(c => String(c || '').trim()));
+        const entries: Partial<ChangeProgress>[] = dataRows
+          .filter(r => r.some(c => c))
+          .map(r => ({
+            project_code: r[0] || '',
+            cr_no: r[1] || '',
+            dcp_no: r[2] || '',
+            cn_no: r[3] || '',
+            change_description: r[4] || '',
+            affects_regulation: (r[5] === '是' || r[5] === '1') ? 1 : 0,
+            regulation_content: r[6] || '',
+            cr_progress: r[7] || '',
+            cn_progress: r[8] || '',
+          }));
+        setImportEntries(entries);
+      } catch (err) {
+        console.error('文件解析失败', err);
+        alert('文件解析失败，请检查格式');
+      }
+    };
+    if (isCsvOrTxt) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleClearImport = () => {
+    setImportEntries([]);
+    setImportResult(null);
+    setFileInfo(null);
+  };
+
+  const handleImport = async () => {
+    if (importEntries.length === 0) {
+      alert('请先上传文件或手动添加数据');
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await changeProgressAPI.import({ entries: importEntries });
+      const result = (res as { data: ImportResult }).data;
+      setImportResult(result);
+      loadProgress();
+    } catch (err: unknown) {
+      const errorInfo = err as { response?: { data?: { message?: string } }; message?: string };
+      alert(errorInfo.response?.data?.message || errorInfo.message || '导入失败');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      await changeProgressAPI.exportCSV(searchKeyword.trim() || undefined);
+    } catch (err) {
+      console.error('导出失败', err);
+      alert('导出失败，请重试');
+    }
+  };
+
+  const handleCloseImportModal = () => {
+    setShowImportModal(false);
+    handleClearImport();
+  };
+
   useEffect(() => {
     loadProgress();
   }, [loadProgress, refreshKey]);
+
+  useEffect(() => {
+    if (!progressLoading) {
+      startTour();
+    }
+  }, [progressLoading, startTour]);
 
   // 前台即时搜索过滤
   const filteredProgress = progressList.filter(item => {
@@ -137,14 +296,15 @@ export function ChangeManagementPage() {
   return (
     <Layout>
       <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-3 min-w-0">
+        <div className="lg:col-span-3 min-w-0" data-tour="change-form">
           <ApplicationForm onApplicationSubmitted={handleApplicationSubmitted} />
         </div>
         <div className="lg:col-span-7 min-w-0">
           <ApplicationList key={refreshKey} />
         </div>
-        <div className="lg:col-span-2 min-w-0">
-          <div className="px-2.5 sm:px-4 py-4 border-2 border-primary/10 rounded-2xl bg-gradient-to-br from-primary/10 via-white/95 to-blue-50/40 sticky top-24 shadow-md hover:shadow-xl transition-all duration-300 relative overflow-hidden group">
+        <div className="lg:col-span-2 min-w-0" data-tour="change-qna">
+          <div className="sticky top-24 space-y-3">
+            <div className="px-2.5 sm:px-4 py-4 border-2 border-primary/10 rounded-2xl bg-gradient-to-br from-primary/10 via-white/95 to-blue-50/40 shadow-md hover:shadow-xl transition-all duration-300 relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-primary via-blue-500 to-primary" />
             <div className="flex items-center justify-between mb-3.5 select-none">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black bg-red-500 text-white uppercase tracking-wider animate-pulse shadow-sm shadow-red-100">
@@ -184,7 +344,7 @@ export function ChangeManagementPage() {
             href="/CI变更实施表填写说明.svg"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 block px-2.5 sm:px-4 py-3.5 border-2 border-amber-200/60 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white/95 to-orange-50/40 shadow-sm hover:shadow-lg hover:border-amber-300/80 transition-all duration-300 relative overflow-hidden group/form"
+            className="block px-2.5 sm:px-4 py-3.5 border-2 border-amber-200/60 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white/95 to-orange-50/40 shadow-sm hover:shadow-lg hover:border-amber-300/80 transition-all duration-300 relative overflow-hidden group/form"
           >
             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#EF8641] via-amber-400 to-[#EF8641]" />
             <div className="flex items-center gap-2 mb-1.5">
@@ -203,11 +363,12 @@ export function ChangeManagementPage() {
               <ArrowRight className="h-3 w-3" />
             </div>
           </a>
+          </div>
         </div>
 
         {/* DCP, CR, CN 变更完成进度 - 还在测试中，先放在下方 */}
         <div className="col-span-12 mt-4">
-          <Card className="border-sky-200 shadow-md">
+          <Card className="border-sky-200 shadow-md" data-tour="change-progress">
             <CardHeader className="bg-gradient-to-r from-sky-50/50 to-slate-50 border-b py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -216,22 +377,32 @@ export function ChangeManagementPage() {
                 <p className="text-xs text-slate-500 mt-1">方便项目组工程师快速查询当前各项变更的发布与法规审批状态</p>
               </div>
               
-              {/* Search bar inside header */}
-              <div className="relative w-full sm:max-w-xs">
-                <Input
-                  value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                  placeholder="快速查找编号或描述..."
-                  className="h-8.5 text-xs pr-8"
-                />
-                {searchKeyword && (
-                  <button
-                    onClick={() => setSearchKeyword('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-                  >
-                    ✕
-                  </button>
-                )}
+              {/* Search bar + action buttons inside header */}
+              <div className="flex items-center gap-2 w-full sm:max-w-md">
+                <Button variant="outline" size="sm" onClick={() => setShowImportModal(true)} className="h-8.5 text-xs flex items-center gap-1.5 shrink-0">
+                  <Upload className="h-3.5 w-3.5" />
+                  导入
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleExportCSV} className="h-8.5 text-xs flex items-center gap-1.5 shrink-0">
+                  <Download className="h-3.5 w-3.5" />
+                  导出
+                </Button>
+                <div className="relative flex-1">
+                  <Input
+                    value={searchKeyword}
+                    onChange={(e) => setSearchKeyword(e.target.value)}
+                    placeholder="快速查找编号或描述..."
+                    className="h-8.5 text-xs pr-8"
+                  />
+                  {searchKeyword && (
+                    <button
+                      onClick={() => setSearchKeyword('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-4">
@@ -611,6 +782,147 @@ export function ChangeManagementPage() {
             <div className="px-6 py-4 bg-slate-50 border-t flex justify-end">
               <Button onClick={() => setSelectedProgress(null)} variant="outline" className="h-8.5 font-bold text-xs px-4">
                 关闭窗口
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批量导入模态框 */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="px-6 py-5 bg-gradient-to-r from-sky-50 via-cyan-50 to-slate-50 border-b border-sky-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">批量导入变更进度</h3>
+                <p className="text-xs text-slate-500 mt-0.5">支持 Excel (.xlsx/.xls) 与 CSV 文件，按 CR/DCP/CN 编号组合去重</p>
+              </div>
+              <button
+                onClick={handleCloseImportModal}
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button variant="outline" onClick={handleDownloadTemplate} className="flex items-center gap-1.5">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  下载导入模板
+                </Button>
+                <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-input bg-background h-9 px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                  <Upload className="h-4 w-4" />
+                  选择文件
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv,.txt"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+                {fileInfo && (
+                  <span className="text-xs text-slate-600">已加载: <span className="font-medium">{fileInfo}</span> · 共 {importEntries.length} 条</span>
+                )}
+                {importEntries.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={handleClearImport} className="ml-auto">
+                    清空
+                  </Button>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 space-y-1">
+                <p className="font-semibold text-slate-700">文件格式说明：</p>
+                <p>第 1 行为表头（共 9 列）：<span className="font-mono">{TEMPLATE_HEADERS.join(' | ')}</span></p>
+                <p>从第 2 行起为数据；"是否影响法规"列填 <span className="font-mono">是</span> 或 <span className="font-mono">否</span>；任一行全空将自动跳过。</p>
+                <p>去重维度：CR/DCP/CN 编号三者组合，已存在的记录会跳过。</p>
+              </div>
+
+              {importEntries.length > 0 && (
+                <div className="overflow-x-auto rounded-lg border max-h-72">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted sticky top-0">
+                      <tr>
+                        {TEMPLATE_HEADERS.map((h, i) => (
+                          <th key={i} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importEntries.slice(0, 200).map((entry, idx) => (
+                        <tr key={idx} className="border-b hover:bg-muted/50">
+                          <td className="px-3 py-2 whitespace-nowrap">{entry.project_code || ''}</td>
+                          <td className="px-3 py-2 whitespace-nowrap font-mono">{entry.cr_no || ''}</td>
+                          <td className="px-3 py-2 whitespace-nowrap font-mono">{entry.dcp_no || ''}</td>
+                          <td className="px-3 py-2 whitespace-nowrap font-mono">{entry.cn_no || ''}</td>
+                          <td className="px-3 py-2 max-w-[200px] truncate" title={entry.change_description}>{entry.change_description || ''}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{entry.affects_regulation ? '是' : '否'}</td>
+                          <td className="px-3 py-2 max-w-[200px] truncate" title={entry.regulation_content}>{entry.regulation_content || ''}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{entry.cr_progress || ''}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{entry.cn_progress || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {importEntries.length > 200 && (
+                    <div className="text-center text-xs text-slate-500 py-2">仅预览前 200 条，实际将导入 {importEntries.length} 条</div>
+                  )}
+                </div>
+              )}
+
+              {importResult && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                      <div className="text-xs text-emerald-700 font-semibold uppercase tracking-wider">成功导入</div>
+                      <div className="text-2xl font-bold text-emerald-700 mt-1">{importResult.imported.length}</div>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <div className="text-xs text-amber-700 font-semibold uppercase tracking-wider">跳过</div>
+                      <div className="text-2xl font-bold text-amber-700 mt-1">{importResult.skipped.length}</div>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="text-xs text-red-700 font-semibold uppercase tracking-wider">错误</div>
+                      <div className="text-2xl font-bold text-red-700 mt-1">{importResult.errors.length}</div>
+                    </div>
+                  </div>
+                  {importResult.errors.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                      <p className="text-xs font-semibold text-red-800 mb-2">错误详情：</p>
+                      <ul className="text-xs text-red-700 space-y-1">
+                        {importResult.errors.map((err, idx) => (
+                          <li key={idx}>第 {err.line} 行: {err.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {importResult.skipped.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                      <p className="text-xs font-semibold text-amber-800 mb-2">跳过详情：</p>
+                      <ul className="text-xs text-amber-700 space-y-1">
+                        {importResult.skipped.map((s, idx) => (
+                          <li key={idx}>第 {s.line} 行: {s.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t bg-slate-50">
+              <Button variant="outline" onClick={handleCloseImportModal}>
+                关闭
+              </Button>
+              <Button
+                onClick={handleImport}
+                loading={importing}
+                disabled={importEntries.length === 0}
+                className="flex items-center gap-1.5"
+              >
+                <Upload className="h-4 w-4" />
+                开始导入 ({importEntries.length})
               </Button>
             </div>
           </div>

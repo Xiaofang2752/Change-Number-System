@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
-import { TechnicalDocumentForm } from '../components/TechnicalDocumentForm';
+import { TechnicalDocumentForm, TECH_CATEGORIES, BOM_SUBTYPES } from '../components/TechnicalDocumentForm';
 import { DifyChatbotEmbed } from '../components/DifyChatbotEmbed';
 import { applicationAPI } from '../services';
 import { Button } from '../components/ui/button';
@@ -8,6 +8,8 @@ import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { formatBeijingTime } from '@/utils/timezone';
 import { Download } from 'lucide-react';
+import { useTour } from '../hooks/useTour';
+import { TECH_STEPS } from '../tour/steps';
 
 interface ApplicationRecord {
   id: number;
@@ -16,28 +18,77 @@ interface ApplicationRecord {
   project_code: string;
   number_type: string;
   full_number: string;
+  category?: string;
+  sub_category?: string;
   created_at: string;
+}
+
+interface CategoryOption {
+  value: string;
+  label: string;
+}
+
+const CATEGORY_OPTIONS: CategoryOption[] = [
+  { value: '', label: '全部类别' },
+  ...TECH_CATEGORIES.reduce<CategoryOption[]>((acc, cat) => {
+    if (cat.code === 'BOM') {
+      BOM_SUBTYPES.forEach(sub => acc.push({ value: sub.code, label: `BOM · ${sub.name}` }));
+    } else {
+      acc.push({ value: cat.code, label: cat.name });
+    }
+    return acc;
+  }, []),
+  { value: 'HISTORICAL', label: '历史文档' },
+];
+
+// 根据记录的 category / sub_category / number_type 得到可读的类别名称
+function getRecordCategoryName(record: ApplicationRecord): string {
+  const category = record.category;
+  if (category) {
+    const sub = BOM_SUBTYPES.find(s => s.code === category || s.legacyCodes?.includes(category));
+    if (sub) return sub.name;
+    const cat = TECH_CATEGORIES.find(c => c.code === category);
+    if (cat) return cat.name;
+  }
+  if (record.number_type === 'HISTORICAL') return '历史文档';
+  return record.number_type || '-';
 }
 
 export function TechnicalDocumentPage() {
   const [records, setRecords] = useState<ApplicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectKeyword, setProjectKeyword] = useState('');
-  const [filterKeyword, setFilterKeyword] = useState('');
-  const [pagination, setPagination] = useState({ page: 1, limit: 8, total: 0, totalPages: 1 });
+  const [filterProject, setFilterProject] = useState('');
+  const [applicantKeyword, setApplicantKeyword] = useState('');
+  const [filterApplicant, setFilterApplicant] = useState('');
+  const [categoryKeyword, setCategoryKeyword] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, limit: 6, total: 0, totalPages: 1 });
   const [allQtdRecords, setAllQtdRecords] = useState<ApplicationRecord[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [folderSearchQuery, setFolderSearchQuery] = useState('');
+  const [folderCategory, setFolderCategory] = useState('');
   const [folderPage, setFolderPage] = useState(1);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [detailRecord, setDetailRecord] = useState<ApplicationRecord | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const { startTour } = useTour('tech', TECH_STEPS);
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
+
 
   useEffect(() => {
     setFolderPage(1);
   }, [folderSearchQuery]);
 
+  useEffect(() => {
+    setFolderCategory('');
+  }, [selectedProject]);
+
   const loadAllQtdRecords = async () => {
     try {
-      const res = await applicationAPI.getAll({ number_type: 'QTD,HISTORICAL', limit: 1000 });
+      const res = await applicationAPI.getAll({ number_type: 'QTD,DHF,SOP,SOFT,BOM,DRW,HISTORICAL', limit: 1000 });
       const responseData = (res as { data: { data: ApplicationRecord[] } }).data;
       setAllQtdRecords(responseData?.data || []);
     } catch (err) {
@@ -47,11 +98,17 @@ export function TechnicalDocumentPage() {
 
   useEffect(() => {
     loadRecords();
-  }, [filterKeyword, pagination.page]);
+  }, [filterProject, filterApplicant, filterCategory, pagination.page]);
 
   useEffect(() => {
     loadAllQtdRecords();
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      startTour();
+    }
+  }, [loading, startTour]);
 
   const handleApplicationSubmitted = () => {
     loadRecords();
@@ -62,9 +119,19 @@ export function TechnicalDocumentPage() {
     setLoading(true);
     try {
       type ApplicationAPIParams = Parameters<typeof applicationAPI.getAll>[0];
-      const params: ApplicationAPIParams = { number_type: 'QTD,HISTORICAL', page: pagination.page, limit: pagination.limit };
-      if (filterKeyword.trim()) {
-        params.project_code = filterKeyword.trim();
+      const params: ApplicationAPIParams = { number_type: 'QTD,DHF,SOP,SOFT,BOM,DRW,HISTORICAL', page: pagination.page, limit: pagination.limit };
+      if (filterProject.trim()) {
+        params.project_code = filterProject.trim();
+      }
+      if (filterApplicant.trim()) {
+        params.applicant_name = filterApplicant.trim();
+      }
+      if (filterCategory.trim()) {
+        if (filterCategory === 'HISTORICAL') {
+          params.number_type = 'HISTORICAL';
+        } else {
+          params.category = filterCategory.trim();
+        }
       }
       const res = await applicationAPI.getAll(params);
       const responseData = (res as { data: { data: ApplicationRecord[]; pagination: typeof pagination } }).data;
@@ -80,7 +147,63 @@ export function TechnicalDocumentPage() {
 
   const handleFilterSearch = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
-    setFilterKeyword(projectKeyword.trim());
+    setFilterProject(projectKeyword.trim());
+    setFilterApplicant(applicantKeyword.trim());
+    setFilterCategory(categoryKeyword.trim());
+  };
+
+  const handleEditStart = (record: ApplicationRecord) => {
+    setEditingId(record.id);
+    setEditingName(record.document_name || '');
+  };
+
+  const openDetailModal = (record: ApplicationRecord) => {
+    setDetailRecord(record);
+    setEditingId(null);
+    setEditingName('');
+    setDetailModalOpen(true);
+  };
+
+  const closeDetailModal = () => {
+    setDetailModalOpen(false);
+    setEditingId(null);
+    setEditingName('');
+    setDetailRecord(null);
+  };
+
+  const handleEditCancel = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
+
+
+  const handleEditSave = async (record: ApplicationRecord) => {
+    const newName = editingName.trim();
+    if (!newName) {
+      alert('文档名称不能为空');
+      return;
+    }
+    if (newName === (record.document_name || '')) {
+      handleEditCancel();
+      return;
+    }
+    setSavingId(record.id);
+    try {
+      await applicationAPI.update(record.id, { document_name: newName });
+      setEditingId(null);
+      setEditingName('');
+      loadRecords();
+      loadAllQtdRecords();
+      if (detailRecord && detailRecord.id === record.id) {
+        setDetailModalOpen(false);
+        setDetailRecord(null);
+      }
+    } catch (err) {
+      console.error('更新文档名称失败', err);
+      alert('更新文档名称失败，请重试');
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const handlePageChange = (newPage: number) => {
@@ -97,7 +220,7 @@ export function TechnicalDocumentPage() {
   };
 
   const handleExportProjectRecords = (projectCode: string) => {
-    const recordsToExport = projectsWithQtd[projectCode] || [];
+    const recordsToExport = getProjectFolderRecords(projectCode);
     if (recordsToExport.length === 0) return;
 
     const headers = ['序号', '文档编号', '文档名称'];
@@ -149,6 +272,18 @@ export function TechnicalDocumentPage() {
     return acc;
   }, {});
 
+  const getProjectFolderRecords = (projectCode: string) => {
+    const list = projectsWithQtd[projectCode] || [];
+    if (!folderCategory) return list;
+    if (folderCategory === 'HISTORICAL') {
+      return list.filter(r => r.number_type === 'HISTORICAL');
+    }
+    if (folderCategory === 'BOM') {
+      return list.filter(r => r.category === 'BOM' || r.category === 'BOM_ASSE' || r.category === 'BOM_SOFT');
+    }
+    return list.filter(r => r.category === folderCategory);
+  };
+
   const filteredFolders = Object.keys(projectsWithQtd)
     .filter(projectCode => projectCode.toLowerCase().includes(folderSearchQuery.toLowerCase().trim()))
     .sort();
@@ -161,13 +296,9 @@ export function TechnicalDocumentPage() {
     <Layout>
       <DifyChatbotEmbed />
       <div className="max-w-6xl mx-auto p-6 space-y-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold">技术文件取号</h1>
-          <p className="mt-2 text-slate-600">适用于 DHF / DMR 文件的编号申请</p>
-        </div>
-
+       
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr] min-h-[calc(100vh-7rem)]">
-          <div className="min-w-0">
+          <div className="min-w-0" data-tour="tech-form">
             <TechnicalDocumentForm onApplicationSubmitted={handleApplicationSubmitted} />
           </div>
           <div className="min-w-0">
@@ -175,8 +306,8 @@ export function TechnicalDocumentPage() {
               <CardHeader>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <CardTitle>QTD 申请记录</CardTitle>
-              
+                    <CardTitle>技术文件申请记录</CardTitle>
+
                   </div>
                   {isAdmin && (
                     <Button variant="default" onClick={handleExport}>
@@ -186,24 +317,68 @@ export function TechnicalDocumentPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1 bg-sky-50/60 border border-sky-100 rounded-xl p-3.5 text-center shadow-sm select-none">
-                    <span className="block text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">总申请 QTD 数量</span>
-                    <span className="block text-2xl font-black font-mono text-sky-600">{pagination.total}</span>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                  <div className="col-span-3 sm:col-span-4 md:col-span-5 bg-sky-50/60 border border-sky-100 rounded-lg px-3 py-2 text-center shadow-sm select-none flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">总申请数量</span>
+                    <span className="text-xl font-black font-mono text-sky-600">{allQtdRecords.length}</span>
                   </div>
+                  {CATEGORY_OPTIONS.slice(1).map(opt => {
+                    const count = allQtdRecords.filter(r => {
+                      if (opt.value === 'HISTORICAL') return r.number_type === 'HISTORICAL';
+                      const sub = BOM_SUBTYPES.find(s => s.code === opt.value);
+                      if (sub?.legacyCodes) {
+                        return sub.code === r.category || sub.legacyCodes.includes(r.category || '');
+                      }
+                      return r.category === opt.value;
+                    }).length;
+                    return (
+                      <div key={opt.value} className="bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5 text-center shadow-sm select-none">
+                        <span className="block text-[10px] text-slate-500 font-medium truncate" title={opt.label}>{opt.label}</span>
+                        <span className="block text-sm font-bold font-mono text-slate-700">{count}</span>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">项目代号</label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={projectKeyword}
-                      onChange={(e) => setProjectKeyword(e.target.value)}
-                      placeholder="输入项目关键字，例如 ALPHA01"
-                    />
-                    <Button onClick={handleFilterSearch}>
-                      查询
-                    </Button>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                  
+                      <Input
+                        value={projectKeyword}
+                        onChange={(e) => setProjectKeyword(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleFilterSearch()}
+                        placeholder="请输入项目代号，如ODBC"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                 
+                      <Input
+                        value={applicantKeyword}
+                        onChange={(e) => setApplicantKeyword(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleFilterSearch()}
+                        placeholder="输入申请人姓名"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+        
+                      <select
+                        value={categoryKeyword}
+                        onChange={(e) => setCategoryKeyword(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                      >
+                        {CATEGORY_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      <Button onClick={handleFilterSearch} className="w-full sm:w-auto">
+                        查询
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
@@ -217,27 +392,25 @@ export function TechnicalDocumentPage() {
                           <th className="px-3.5 py-3 font-semibold whitespace-nowrap">申请人</th>
                           <th className="px-3.5 py-3 font-semibold whitespace-nowrap">文档编号</th>
                           <th className="px-3.5 py-3 font-semibold whitespace-nowrap">文档名称</th>
-                          <th className="px-3.5 py-3 font-semibold whitespace-nowrap">申请时间</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="text-xs md:text-sm">
                         {records.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="px-3.5 py-8 text-center text-muted-foreground text-xs md:text-sm">
+                            <td colSpan={3} className="px-3.5 py-8 text-center text-muted-foreground">
                               暂无记录
                             </td>
                           </tr>
                         ) : (
                           records.map(record => (
-                            <tr key={record.id} className="border-b hover:bg-muted/50">
-                              <td className="px-3.5 py-3 whitespace-nowrap text-xs md:text-sm text-slate-700">{record.applicant_name}</td>
-                              <td className="px-3.5 py-3 font-medium whitespace-nowrap text-xs md:text-sm text-slate-800 font-mono">{record.full_number}</td>
-                              <td className="px-3.5 py-3 text-xs md:text-sm text-slate-600">
+                            <tr key={record.id} onClick={() => openDetailModal(record)} className="border-b hover:bg-muted/50 cursor-pointer">
+                              <td className="px-3.5 py-3 whitespace-nowrap text-slate-700">{record.applicant_name}</td>
+                              <td className="px-3.5 py-3 font-medium whitespace-nowrap text-slate-800 font-mono">{record.full_number}</td>
+                              <td className="px-3.5 py-3 text-slate-600">
                                 <div className="truncate max-w-[120px] sm:max-w-[200px] md:max-w-[320px] lg:max-w-[500px]" title={record.document_name || ''}>
                                   {record.document_name || '-'}
                                 </div>
                               </td>
-                              <td className="px-3.5 py-3 text-muted-foreground whitespace-nowrap text-xs md:text-sm">{formatBeijingTime(record.created_at)}</td>
                             </tr>
                           ))
                         )}
@@ -262,9 +435,9 @@ export function TechnicalDocumentPage() {
               </CardContent>
             </Card>
 
-            <Card className="mt-6 border-2 border-sky-100 shadow-md">
+            <Card className="mt-6 border-2 border-sky-100 shadow-md" data-tour="tech-folders">
               <CardHeader className="bg-gradient-to-r from-sky-50/50 to-slate-50 border-b border-sky-100/50 py-4">
-                <CardTitle className="text-lg font-bold text-slate-800">历史项目文档</CardTitle>
+                <CardTitle className="text-lg font-bold text-slate-800">项目文档列表</CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">点击项目文件夹，查看该项目下的全部技术文档。</p>
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
@@ -358,7 +531,10 @@ export function TechnicalDocumentPage() {
                 <span className="text-2xl">📁</span>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">项目 {selectedProject} 文档列表</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">该项目下共计 {projectsWithQtd[selectedProject]?.length || 0} 个技术文档</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    该项目下共计 {projectsWithQtd[selectedProject]?.length || 0} 个技术文档
+                    {folderCategory && `，当前筛选 ${CATEGORY_OPTIONS.find(o => o.value === folderCategory)?.label || folderCategory} 共 ${getProjectFolderRecords(selectedProject).length} 个`}
+                  </p>
                 </div>
               </div>
               <button
@@ -372,21 +548,35 @@ export function TechnicalDocumentPage() {
 
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <label className="text-sm font-medium whitespace-nowrap">文件类别筛选：</label>
+                <select
+                  value={folderCategory}
+                  onChange={(e) => setFolderCategory(e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:ring-1 focus:ring-sky-500 sm:w-64"
+                >
+                  {CATEGORY_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
               <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-50 text-xs text-slate-600 border-b">
                     <tr>
                       <th className="px-4 py-3 font-semibold w-16 text-center">序号</th>
                       <th className="px-4 py-3 font-semibold w-1/3">文档编号</th>
+                      <th className="px-4 py-3 font-semibold">文件类别</th>
                       <th className="px-4 py-3 font-semibold">文档名称</th>
                       {isAdmin && <th className="px-4 py-3 font-semibold w-24 text-center">操作</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {projectsWithQtd[selectedProject]?.map((record, index) => (
+                    {getProjectFolderRecords(selectedProject).map((record, index) => (
                       <tr key={record.id} className="border-b hover:bg-slate-50/50">
                         <td className="px-4 py-3 text-xs md:text-sm text-center text-slate-500 font-mono">{index + 1}</td>
                         <td className="px-4 py-3 text-xs md:text-sm font-semibold font-mono text-slate-800 select-all">{record.full_number}</td>
+                        <td className="px-4 py-3 text-xs md:text-sm text-slate-600">{getRecordCategoryName(record)}</td>
                         <td className="px-4 py-3 text-xs md:text-sm text-slate-600">{record.document_name || '-'}</td>
                         {isAdmin && (
                           <td className="px-4 py-2 text-center whitespace-nowrap">
@@ -419,6 +609,75 @@ export function TechnicalDocumentPage() {
               <Button onClick={() => setSelectedProject(null)} variant="outline">
                 关闭
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailModalOpen && detailRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={closeDetailModal}>
+          <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 bg-gradient-to-r from-sky-50 to-slate-50 border-b border-sky-100 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">技术文档详情</h3>
+              <button
+                onClick={closeDetailModal}
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition"
+                title="关闭"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-[5rem_1fr] gap-3 items-center">
+                <span className="text-sm text-slate-500 font-medium">申请人</span>
+                <span className="text-sm font-semibold text-slate-800">{detailRecord.applicant_name}</span>
+              </div>
+              <div className="grid grid-cols-[5rem_1fr] gap-3 items-center">
+                <span className="text-sm text-slate-500 font-medium">文档编号</span>
+                <span className="text-sm font-semibold font-mono text-slate-800">{detailRecord.full_number}</span>
+              </div>
+              <div className="grid grid-cols-[5rem_1fr] gap-3 items-center">
+                <span className="text-sm text-slate-500 font-medium">文件类别</span>
+                <span className="text-sm text-slate-700">{getRecordCategoryName(detailRecord)}</span>
+              </div>
+              <div className="grid grid-cols-[5rem_1fr] gap-3 items-center">
+                <span className="text-sm text-slate-500 font-medium">申请时间</span>
+                <span className="text-sm text-slate-700">{formatBeijingTime(detailRecord.created_at)}</span>
+              </div>
+              <div className="grid grid-cols-[5rem_1fr] gap-3 items-start">
+                <span className="text-sm text-slate-500 font-medium pt-2">文档名称</span>
+                <div>
+                  {editingId === detailRecord.id ? (
+                    <Input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleEditSave(detailRecord);
+                        if (e.key === 'Escape') handleEditCancel();
+                      }}
+                      className="h-9 text-sm"
+                      autoFocus
+                    />
+                  ) : (
+                    <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 min-h-[2.25rem]">
+                      {detailRecord.document_name || '-'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              {editingId === detailRecord.id ? (
+                <>
+                  <Button variant="outline" onClick={handleEditCancel}>取消</Button>
+                  <Button onClick={() => handleEditSave(detailRecord)} loading={savingId === detailRecord.id}>保存</Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={closeDetailModal}>关闭</Button>
+                  <Button onClick={() => handleEditStart(detailRecord)}>修改文档名称</Button>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -4,6 +4,9 @@ const DEFAULT_DIFY_TOKEN = 'bkCgWSXgSyNhDsZ8';
 const DEFAULT_DIFY_BASE_URL = 'http://192.168.122.193:8090';
 const DEFAULT_DIFY_PORT = '8090';
 
+const BUTTON_ID = 'dify-chatbot-bubble-button';
+const IFRAME_ID = 'dify-chatbot-bubble-window';
+
 type DifyChatbotConfig = {
   token: string;
   baseUrl: string;
@@ -55,28 +58,30 @@ export function DifyChatbotEmbed() {
     return () => {
       script.remove();
       delete difyWindow.difyChatbotConfig;
-      document.getElementById('dify-chatbot-bubble-button')?.remove();
-      document.getElementById('dify-chatbot-bubble-window')?.remove();
+      document.getElementById(BUTTON_ID)?.remove();
+      document.getElementById(IFRAME_ID)?.remove();
     };
   }, []);
 
   return (
-    <style>{`
-      #dify-chatbot-bubble-button {
-        background-color: #1C64F2 !important;
-      }
-
-      #dify-chatbot-bubble-window {
-        width: 24rem !important;
-        height: 40rem !important;
-      }
-
-      @media (max-width: 640px) {
-        #dify-chatbot-bubble-window {
-          width: calc(100vw - 2rem) !important;
-          height: min(40rem, calc(100vh - 6rem)) !important;
+    <div data-tour="tech-chatbot">
+      <style>{`
+        #dify-chatbot-bubble-button {
+          background-color: #1C64F2 !important;
         }
-      }
-    `}</style>
+
+        #dify-chatbot-bubble-window {
+          width: 24rem !important;
+          height: 40rem !important;
+        }
+
+        @media (max-width: 640px) {
+          #dify-chatbot-bubble-window {
+            width: calc(100vw - 2rem) !important;
+            height: min(40rem, calc(100vh - 6rem)) !important;
+          }
+        }
+      `}</style>
+    </div>
   );
 }

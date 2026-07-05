@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { projectAPI, applicationAPI, settingsAPI, technicalDocumentAPI } from '../services';
+import { projectAPI, applicationAPI, settingsAPI } from '../services';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -19,11 +19,29 @@ interface TechnicalDocumentFormProps {
   onApplicationSubmitted?: () => void;
 }
 
+// 技术文件取号类别（7 类）
+export const TECH_CATEGORIES = [
+  { code: 'PRODUCT_TECH', name: '产品技术文件', format: 'QTD-项目代号-6位流水号', needProject: true, hint: '工艺流程图、工艺规程、使用说明书属于此类' },
+  { code: 'GENERAL_TECH', name: '通用技术', format: 'QTD-CM-6位流水号', needProject: true, hint: '通用技术指南、技术规范、规定、标准属于此类' },
+  { code: 'DHF', name: 'DHF', format: 'DHF-项目代号-6位流水号', needProject: true, hint: 'M0-M5开发过程文件，如《产品需求规格说明书》《系统设计方案》等属于此类' },
+  { code: 'SOP', name: 'SOP', format: 'SOP-项目代号-6位流水号', needProject: true, hint: '产品装配/调试/检验/售后/来料检验/设备操作规程/治具操作规程等属于此类' },
+  { code: 'PROGRAM', name: '程序', format: 'SOFT-项目代号-S1+6位流水号', needProject: true, hint: '固件、应用软件、工具驱动、配置参数、软件清单等属于此类' },
+  { code: 'BOM', name: 'BOM', format: 'BOM-子类型-项目代号-6位流水号', needProject: true, hint: '仪器、模块、PCBA、软件等属于此类', hasSubType: true },
+  { code: 'OTHER_DRAWING', name: '其他图纸', format: 'DRW-CM-6位流水号', needProject: false, hint: '指除机械图纸、线材图纸外，不在规范内的图纸' },
+] as const;
+
+// BOM 子类型（2 类）
+export const BOM_SUBTYPES = [
+  { code: 'BOM', name: '仪器/模块/软件清单', format: 'BOM-项目代号-6位流水号', legacyCodes: ['BOM_ASSE', 'BOM_SOFT'] as string[] },
+  { code: 'BOM_PCBA', name: 'PCBA', format: 'BOM-PCBA-6位流水号', legacyCodes: [] as string[] },
+] as const;
+
 export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocumentFormProps) {
   const [formData, setFormData] = useState({
     applicant_name: '',
     document_name: '',
-    file_scope: 'project',
+    category: 'PRODUCT_TECH' as string,
+    bomSubType: 'BOM' as string,
     project_code: '',
   });
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -37,31 +55,20 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
   const [captchaKey, setCaptchaKey] = useState(0);
   const [capToken, setCapToken] = useState<string | null>(null);
 
+  const selectedCategory = TECH_CATEGORIES.find(c => c.code === formData.category);
+  const needProject = selectedCategory?.needProject ?? false;
+
   const handleCaptchaReset = useCallback(() => {
     setCapToken(null);
   }, []);
 
   const loadProjects = useCallback(async () => {
     try {
-      const [projectsRes, keywordsRes] = await Promise.all([
-        projectAPI.getAll('approved,pending'),
-        technicalDocumentAPI.getKeywords('approved,pending')
-      ]);
-      
+      const projectsRes = await projectAPI.getAll('approved,pending');
       const rawProjects = (projectsRes as { data: ProjectItem[] }).data || [];
-      const rawKeywords = (keywordsRes as { data: { id: number; keyword: string; description: string; status: string; created_at: string }[] }).data || [];
-      
-      const mappedKeywords = rawKeywords.map(kw => ({
-        id: -kw.id, // Use negative ID to avoid collision with project ID
-        code: kw.keyword,
-        name: `[QTD关键字] ${kw.description || ''}`,
-        status: kw.status,
-        created_at: kw.created_at
-      }));
-
-      setProjects([...rawProjects, ...mappedKeywords]);
+      setProjects(rawProjects);
     } catch (err) {
-      console.error('加载项目和关键字失败', err);
+      console.error('加载项目失败', err);
     }
   }, []);
 
@@ -121,11 +128,13 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
     if (!formData.applicant_name.trim()) {
       setError('请填写申请人姓名');
       return;
-    }    if (!formData.document_name.trim()) {
+    }
+    if (!formData.document_name.trim()) {
       setError('请填写文档名称');
       return;
-    }    if (formData.file_scope === 'project' && !formData.project_code.trim()) {
-      setError('请选择项目管理类文件的项目代号');
+    }
+    if (needProject && !formData.project_code.trim()) {
+      setError('请选择项目代号');
       return;
     }
     if (!capToken) {
@@ -142,12 +151,14 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
     setResult(null);
 
     try {
-      const projectCode = formData.file_scope === 'project' ? formData.project_code.trim() : '';
+      // BOM 类别提交其子类型 code，其余提交类别 code 本身
+      const finalCategory = formData.category === 'BOM' ? formData.bomSubType : formData.category;
+      const projectCode = needProject ? formData.project_code.trim() : '';
       const response = await applicationAPI.create({
         applicant_name: formData.applicant_name.trim(),
         document_name: formData.document_name.trim(),
         project_code: projectCode,
-        number_type: 'QTD',
+        category: finalCategory,
         capToken,
       });
 
@@ -186,8 +197,8 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
             <span className="text-2xl">📄</span>
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold text-slate-900">技术文件取号</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">QTD：Quaero Technical Document</p>
+            <CardTitle className="text-2xl font-bold text-slate-900">技术文件编号申请</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">DHF / SOP / BOM / 程序 / 产品技术文件 / 通用技术 / 其他图纸</p>
           </div>
         </div>
       </CardHeader>
@@ -204,7 +215,7 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
           <div className="bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border-2 border-emerald-500/30 rounded-2xl p-5 shadow-xl shadow-emerald-500/5 animate-in zoom-in-95 duration-200">
             <div className="text-xs font-bold uppercase tracking-wider text-emerald-800 mb-2.5 flex items-center gap-1.5 select-none">
               <span>🎉</span>
-              <span>成功生成 QTD 编号</span>
+              <span>成功生成技术文件编号</span>
             </div>
             
             <div className="flex items-center justify-between gap-4 bg-slate-900 text-emerald-400 border-2 border-slate-800 rounded-xl px-5 py-4 font-mono shadow-inner relative group overflow-hidden">
@@ -236,14 +247,7 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 space-y-3">
-          <p className="font-semibold">QTD 取号说明</p>
-          <ul className="list-disc ml-5 space-y-1 text-sm text-slate-600">
-            <li>编号前缀固定为 <span className="font-medium">QTD</span>。</li>
-            <li>项目管理类文件会使用项目代号或 QTD 关键字，生成格式为 <span className="font-medium">QTD-项目代号-流水号</span>。</li>
-            <li>非项目管理类文件省略关键字，生成格式为 <span className="font-medium">QTD-流水号</span>。</li>
-          </ul>
-        </div>
+       
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2 p-4 rounded-2xl border border-slate-200 bg-white">
             <label className="text-sm font-semibold flex items-center gap-2">
@@ -269,7 +273,7 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
             <Input
               value={formData.document_name}
               onChange={(e) => setFormData(prev => ({ ...prev, document_name: e.target.value }))}
-              placeholder="请输入文档名称，例如 DHF 文档名称"
+              placeholder="请输入文档名称"
               required
               className="border-2 focus:border-sky-400"
             />
@@ -278,43 +282,61 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
           <div className="space-y-2 p-4 rounded-2xl border border-slate-200 bg-white">
             <label className="text-sm font-semibold flex items-center gap-2">
               <span className="text-lg">🧭</span>
-              文件归类
+              文件类别
+              <span className="text-destructive">*</span>
             </label>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                className={`rounded-xl border p-4 text-left transition ${formData.file_scope === 'project' ? 'border-sky-500 bg-sky-50 shadow-sm' : 'border-slate-200 bg-white'}`}
-                onClick={() => setFormData(prev => ({ ...prev, file_scope: 'project' }))}
-              >
-                <div className="text-sm font-semibold">项目类文件</div>
-                <div className="text-xs text-slate-500 mt-1">项目上使用，如产品需求规格说明书等</div>
-              </button>
-              <button
-                type="button"
-                className={`rounded-xl border p-4 text-left transition ${formData.file_scope === 'non-project' ? 'border-sky-500 bg-sky-50 shadow-sm' : 'border-slate-200 bg-white'}`}
-                onClick={() => setFormData(prev => ({ ...prev, file_scope: 'non-project', project_code: '' }))}
-              >
-                <div className="text-sm font-semibold">非项目类文件</div>
-                <div className="text-xs text-slate-500 mt-1">如通用文档，某些通用SOP</div>
-              </button>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {TECH_CATEGORIES.map(cat => (
+                <button
+                  key={cat.code}
+                  type="button"
+                  className={`rounded-xl border p-3 text-left transition ${formData.category === cat.code ? 'border-sky-500 bg-sky-50 shadow-sm' : 'border-slate-200 bg-white hover:border-sky-300'}`}
+                  onClick={() => setFormData(prev => ({ ...prev, category: cat.code, project_code: '' }))}
+                >
+                  <div className="text-sm font-semibold">{cat.name}</div>
+                  <div className="text-[11px] text-slate-500 mt-1 break-all">{cat.format}</div>
+                </button>
+              ))}
             </div>
+
+            {formData.category === 'BOM' && (
+              <div className="mt-3 space-y-2">
+                <label className="text-xs font-semibold text-slate-700">BOM 子类型</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {BOM_SUBTYPES.map(sub => (
+                    <button
+                      key={sub.code}
+                      type="button"
+                      className={`rounded-lg border p-2.5 text-left transition ${formData.bomSubType === sub.code ? 'border-sky-500 bg-sky-50 shadow-sm' : 'border-slate-200 bg-white hover:border-sky-300'}`}
+                      onClick={() => setFormData(prev => ({ ...prev, bomSubType: sub.code }))}
+                    >
+                      <div className="text-xs font-semibold">{sub.name}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5 break-all">{sub.format}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedCategory?.hint && (
+              <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                💡 {selectedCategory.hint}
+              </p>
+            )}
           </div>
 
-          {formData.file_scope === 'project' && (
+          {needProject && (
             <div className="space-y-2 p-4 rounded-2xl border border-slate-200 bg-white">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-sm font-semibold flex items-center gap-2">
-                  <span className="text-lg">🗂️</span>
-                  选择项目关键字 / 代号
-                  <span className="text-destructive">*</span>
-                </label>
-           
-              </div>
+              <label className="text-sm font-semibold flex items-center gap-2">
+                <span className="text-lg">🗂️</span>
+                选择项目代号
+                <span className="text-destructive">*</span>
+              </label>
               <FilterableProjectSelector
                 projects={projects}
                 value={formData.project_code}
                 onChange={(code) => setFormData(prev => ({ ...prev, project_code: code }))}
-                placeholder="请选择项目关键字或代号"
+                placeholder="请选择项目代号"
               />
             </div>
           )}

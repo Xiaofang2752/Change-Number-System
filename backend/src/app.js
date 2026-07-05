@@ -20,6 +20,7 @@ const capRouter = require('./routes/cap');
 const settingsRouter = require('./routes/settings');
 const changeProgressRouter = require('./routes/change-progress');
 const contributorsRouter = require('./routes/contributors');
+const guideQnaRouter = require('./routes/guide-qna');
 const { initializeDefaultAdmin } = require('./controllers/adminController');
 
 const app = express();
@@ -61,6 +62,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/change-progress', changeProgressRouter);
 app.use('/api/contributors', contributorsRouter);
+app.use('/api/guide-qna', guideQnaRouter);
 app.use('/cap', capRouter);
 
 // 错误处理

@@ -2,13 +2,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { contributorAPI, type Contributor } from '../services';
 import { Layout } from '../components/Layout';
+import { GuideQnaManager } from '../components/GuideQnaManager';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 
+type PageTab = 'contributors' | 'qna';
+
 export function AdminContributorsPage() {
   const navigate = useNavigate();
+  const [pageTab, setPageTab] = useState<PageTab>('contributors');
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -108,18 +112,38 @@ export function AdminContributorsPage() {
     setError('');
   };
 
-  if (loading) {
+  if (loading && pageTab === 'contributors') {
     return <div className="min-h-screen flex items-center justify-center">加载中...</div>;
   }
 
   return (
     <Layout>
       <div className="max-w-7xl mx-auto p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">贡献者荣誉榜管理</h2>
+        {/* 顶层 Tab：贡献者荣誉榜 / Q&A 管理 */}
+        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80 shadow-sm w-fit mb-6">
+          <button
+            onClick={() => setPageTab('contributors')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${pageTab === 'contributors' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            贡献者荣誉榜
+          </button>
+          <button
+            onClick={() => setPageTab('qna')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${pageTab === 'qna' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            Q&A 管理
+          </button>
         </div>
 
-        <Card className="mb-6">
+        {pageTab === 'qna' ? (
+          <GuideQnaManager />
+        ) : (
+          <>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">贡献者荣誉榜管理</h2>
+            </div>
+
+            <Card className="mb-6">
           <CardHeader>
             <div className="flex justify-between items-center">
               <CardTitle>贡献者列表</CardTitle>
@@ -270,6 +294,8 @@ export function AdminContributorsPage() {
             </div>
           </CardContent>
         </Card>
+          </>
+        )}
       </div>
     </Layout>
   );

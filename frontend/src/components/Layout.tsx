@@ -17,9 +17,24 @@ export function Layout({ children }: LayoutProps) {
     window.location.href = '/';
   };
 
+  const tourPageMap: Record<string, string> = {
+    '/': 'home',
+    '/change-management': 'change',
+    '/technical-document': 'tech',
+  };
+
+  const currentPageKey = tourPageMap[location.pathname];
+
+  const handleRestartTour = () => {
+    if (currentPageKey) {
+      window.dispatchEvent(new CustomEvent('tour:restart', { detail: { pageKey: currentPageKey } }));
+    }
+  };
+
   const navItems = isAdmin ? [
     { label: '控制面板', path: '/admin/dashboard', icon: LayoutDashboard },
-    { label: '申请管理', path: '/admin/applications', icon: FileText },
+    { label: '变更管理', path: '/admin/applications', icon: FileText },
+    { label: '技术文件', path: '/admin/technical-documents', icon: FileText },
     { label: '项目管理', path: '/admin/projects', icon: Database },
     { label: '编号类型', path: '/admin/number-types', icon: Settings },
     { label: '技术文件', path: '/admin/technical-documents', icon: FileText },
@@ -107,7 +122,24 @@ export function Layout({ children }: LayoutProps) {
             <p className="text-xs text-muted-foreground">
               © {new Date().getFullYear()} 自动取号系统
             </p>
-            <span className="text-xs text-muted-foreground">版本 {import.meta.env.VITE_APP_VERSION || 'v1.0'}</span>
+            <div className="flex items-center gap-4">
+              {currentPageKey && (
+                <button
+                  onClick={handleRestartTour}
+                  className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1 relative"
+                  title="重新查看功能引导"
+                >
+                  {/* 透明占位元素，用于引导定位（不显示高亮） */}
+                  <span
+                    data-tour="footer-restart-tour"
+                    className="absolute inset-0 opacity-0 pointer-events-none"
+                    style={{ zIndex: -1 }}
+                  />
+                  📖 功能引导
+                </button>
+              )}
+              <span className="text-xs text-muted-foreground">版本 {import.meta.env.VITE_APP_VERSION || 'v1.0'}</span>
+            </div>
           </div>
         </div>
       </footer>

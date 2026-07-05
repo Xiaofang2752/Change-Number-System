@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   app:
-    image: crpi-yl4pb9sg5y2myg6f.cn-hangzhou.personal.cr.aliyuncs.com/9992099/change_number_system:latest
+    image: ${APP_IMAGE:-change-number-system:latest}
     container_name: change-number-system
     restart: unless-stopped
     ports:
@@ -21,10 +21,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-      - "com.centurylinklabs.watchtower.lifecycle.pre-check=/app/scripts/pre-update.sh"
-      - "com.centurylinklabs.watchtower.lifecycle.pre-update-timeout=30"
     logging:
       driver: "json-file"
       options:
@@ -37,26 +33,6 @@ services:
           cpus: '0.5'
         reservations:
           memory: 256M
-
-  watchtower:
-    image: crpi-yl4pb9sg5y2myg6f.cn-hangzhou.personal.cr.aliyuncs.com/9992099/watchtower:latest
-    container_name: watchtower
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 300 --label-enable --cleanup --rolling-restart
-    environment:
-      - WATCHTOWER_POLL_INTERVAL=300
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_LABEL_ENABLE=true
-      - WATCHTOWER_ROLLING_RESTART=true
-      - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_LIFECYCLE_HOOKS=true
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
 
 volumes:
   sqlite-data:

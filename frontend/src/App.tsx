@@ -15,6 +15,12 @@ import { AdminApplicationsPage } from './pages/AdminApplicationsPage';
 import { AdminChangeProgressPage } from './pages/AdminChangeProgressPage';
 import { AdminContributorsPage } from './pages/AdminContributorsPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import './tour/driver.css';
+
+// 禁用浏览器自动滚动恢复
+if ('scrollRestoration' in history) {
+  history.scrollRestoration = 'manual';
+}
 
 function App() {
   return (

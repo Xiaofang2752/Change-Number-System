@@ -6,16 +6,30 @@ import { applicationAPI, contributorAPI, type Application, type Contributor } fr
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { formatBeijingTime } from '@/utils/timezone';
+import { useTour } from '../hooks/useTour';
+import { HOME_STEPS } from '../tour/steps';
 
 const typeColors: { [key: string]: string } = {
   DCP: 'bg-amber-500',
   CR: 'bg-rose-500',
   CN: 'bg-emerald-500',
   TD: 'bg-sky-500',
-  QTD: 'bg-violet-500',
 };
 
-const types = ['DCP', 'CR', 'CN', 'TD', 'QTD'];
+const types = ['DCP', 'CR', 'CN', 'TD'];
+
+const techCategories = [
+  { code: 'PRODUCT_TECH', name: '产品技术文件', color: 'bg-violet-500' },
+  { code: 'GENERAL_TECH', name: '通用技术', color: 'bg-indigo-500' },
+  { code: 'DHF', name: 'DHF', color: 'bg-sky-500' },
+  { code: 'SOP', name: 'SOP', color: 'bg-cyan-500' },
+  { code: 'PROGRAM', name: '程序', color: 'bg-emerald-500' },
+  { code: 'BOM', name: 'BOM（仪器/模块/软件清单）', color: 'bg-amber-500' },
+  { code: 'BOM_PCBA', name: 'PCBA', color: 'bg-orange-500' },
+  { code: 'OTHER_DRAWING', name: '其他图纸', color: 'bg-slate-500' },
+  { code: 'HISTORICAL', name: '历史文档', color: 'bg-slate-400' },
+];
+
 
 export function Home() {
   const [applications, setApplications] = useState<Application[]>([]);
@@ -27,6 +41,9 @@ export function Home() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalRecords, setModalRecords] = useState<Application[]>([]);
   const [contribModalOpen, setContribModalOpen] = useState(false);
+  const [activeStatTab, setActiveStatTab] = useState<'change' | 'tech'>('change');
+  const { startTour } = useTour('home', HOME_STEPS);
+
 
   const loadData = async () => {
     try {
@@ -50,6 +67,12 @@ export function Home() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      startTour();
+    }
+  }, [loading, startTour]);
 
   const getLastMonths = (num = 6) => {
     const months = [];
@@ -88,6 +111,40 @@ export function Home() {
 
   const maxTotal = Math.max(...monthlyData.map(d => d.total), 5);
 
+  // 技术文件月度统计（按文件类别细分）
+  const getTechCategoryCode = (app: Application) => {
+    if (app.number_type === 'HISTORICAL') return 'HISTORICAL';
+    if (app.category === 'BOM_ASSE' || app.category === 'BOM_SOFT') return 'BOM';
+    return app.category || 'OTHER';
+  };
+
+  const techMonthlyData = months.map(month => {
+    const dataForMonth = applications.filter(app => {
+      if (app.applicant_type?.toLowerCase() === 'imported') return false;
+      const techNumberTypes = ['QTD', 'DHF', 'SOP', 'SOFT', 'BOM', 'DRW', 'HISTORICAL'];
+      return app.created_at?.startsWith(month) && techNumberTypes.includes(app.number_type);
+    });
+    const counts: { [key: string]: number } = {};
+    const recordsByCategory: { [key: string]: Application[] } = {};
+
+    techCategories.forEach(cat => {
+      const catRecords = dataForMonth.filter(app => getTechCategoryCode(app) === cat.code);
+      counts[cat.code] = catRecords.length;
+      recordsByCategory[cat.code] = catRecords;
+    });
+    recordsByCategory['ALL'] = dataForMonth;
+
+    return {
+      month,
+      counts,
+      recordsByCategory,
+      total: dataForMonth.length,
+    };
+  });
+
+  const techMaxTotal = Math.max(...techMonthlyData.map(d => d.total), 5);
+
+
   const handleMonthTotalClick = (month: string, records: Application[]) => {
     setModalTitle(`${month} 月度全部申请明细`);
     setModalRecords(records);
@@ -105,14 +162,14 @@ export function Home() {
       <div className="max-w-6xl mx-auto p-6 space-y-8">
         <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-lg">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
+            <div data-tour="home-system-title">
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-500">请选择取号入口</p>
               <h1 className="mt-4 text-4xl font-bold text-slate-900">自动取号系统</h1>
               <p className="mt-3 max-w-2xl text-slate-600 leading-7">
                 帮助工程师快速获取编号
               </p>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2" data-tour="home-entry">
               <Link
                 to="/change-management"
                 className="group rounded-3xl border border-slate-200 bg-slate-50 p-6 text-left shadow-sm transition-all duration-300 ease-out hover:-translate-y-2 hover:scale-[1.02] hover:shadow-xl hover:border-[#00AEAA] hover:bg-[#00AEAA] hover:shadow-[#00AEAA]/30"
@@ -152,15 +209,41 @@ export function Home() {
         </div>
 
         {/* Chart Card */}
-        <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden" data-tour="home-chart">
           <CardHeader className="bg-gradient-to-r from-slate-50 via-slate-100/50 to-slate-50 border-b py-5">
-            <CardTitle className="text-xl font-bold text-slate-800">月度申请统计</CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">统计最近6个月各类型取号申请数量，点击柱条或顶部数字查看申请明细。</p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <CardTitle className="text-xl font-bold text-slate-800">月度申请统计</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">统计最近6个月各类型取号申请数量，点击柱条或顶部数字查看申请明细。</p>
+              </div>
+              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80 shadow-sm w-fit">
+                <button
+                  onClick={() => setActiveStatTab('change')}
+                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all duration-200 select-none ${
+                    activeStatTab === 'change'
+                      ? 'bg-white text-primary shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  变更管理 (DCP/CR/CN/TD)
+                </button>
+                <button
+                  onClick={() => setActiveStatTab('tech')}
+                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all duration-200 select-none ${
+                    activeStatTab === 'tech'
+                      ? 'bg-white text-primary shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  技术文件统计
+                </button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="pt-6">
             {loading ? (
               <div className="text-center py-12 text-sm text-slate-500">统计加载中...</div>
-            ) : (
+            ) : activeStatTab === 'change' ? (
               <div>
                 {/* Legend */}
                 <div className="flex flex-wrap gap-4 justify-center items-center mb-6 select-none">
@@ -242,24 +325,108 @@ export function Home() {
                   </div>
                 </div>
               </div>
+            ) : (
+              <div>
+                {/* Tech Doc Legend */}
+                <div className="flex flex-wrap gap-3 justify-center items-center mb-6 select-none">
+                  {techCategories.map(cat => (
+                    <div key={cat.code} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                      <span className={`w-3 h-3 rounded-full ${cat.color} shadow-sm`} />
+                      <span>{cat.name}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tech Doc Chart body */}
+                <div className="flex pb-2 mb-2 items-end max-w-3xl mx-auto px-4">
+                  {/* Y-Axis */}
+                  <div className="flex flex-col justify-between text-[10px] text-slate-400 font-bold font-mono h-56 pr-4 select-none pb-6">
+                    <span>{techMaxTotal}</span>
+                    <span>{Math.round(techMaxTotal * 0.75)}</span>
+                    <span>{Math.round(techMaxTotal * 0.5)}</span>
+                    <span>{Math.round(techMaxTotal * 0.25)}</span>
+                    <span>0</span>
+                  </div>
+
+                  {/* Bars Container */}
+                  <div className="flex-1 flex justify-around items-end h-56 pb-6 relative border-b border-slate-200 border-l border-slate-100">
+                    {/* Horizontal gridlines */}
+                    <div className="absolute inset-x-0 top-0 border-t border-slate-100/50 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-1/4 border-t border-slate-100/50 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-1/2 border-t border-slate-100/50 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-3/4 border-t border-slate-100/50 pointer-events-none" />
+
+                    {techMonthlyData.map(monthInfo => {
+                      const barHeightPercent = techMaxTotal > 0 ? (monthInfo.total / techMaxTotal) * 100 : 0;
+                      return (
+                        <div key={monthInfo.month} className="flex flex-col items-center justify-end w-12 sm:w-16 h-full relative z-10 group">
+                          {/* Total Value Clickable */}
+                          {monthInfo.total > 0 && (
+                            <button
+                              onClick={() => handleMonthTotalClick(monthInfo.month, monthInfo.recordsByCategory['ALL'] || [])}
+                              className="text-[10px] font-black text-slate-600 bg-slate-100 hover:bg-sky-100 hover:text-sky-700 px-1.5 py-0.5 rounded transition mb-2 shadow-sm select-none"
+                              title={`点击查看 ${monthInfo.month} 月技术文件全部记录`}
+                            >
+                              {monthInfo.total}
+                            </button>
+                          )}
+
+                          {/* Stacked Bar */}
+                          <div 
+                            className="w-7 sm:w-9 bg-slate-50 border border-slate-200/60 rounded-t-md overflow-hidden flex flex-col-reverse justify-start shadow-sm group-hover:shadow-md transition-all duration-200" 
+                            style={{ height: `${Math.max(barHeightPercent, 2)}%`, minHeight: monthInfo.total > 0 ? '8px' : '0px' }}
+                          >
+                            {techCategories.map(cat => {
+                              const count = monthInfo.counts[cat.code];
+                              if (count === 0) return null;
+                              const pct = (count / monthInfo.total) * 100;
+                              return (
+                                <button
+                                  key={cat.code}
+                                  onClick={() => handleDetailClick(monthInfo.month, cat.name, monthInfo.recordsByCategory[cat.code])}
+                                  style={{ height: `${pct}%` }}
+                                  className={`w-full ${cat.color} hover:brightness-95 transition-all cursor-pointer relative group/segment`}
+                                  title={`${monthInfo.month} ${cat.name}: ${count}条 (点击查看详情)`}
+                                >
+                                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-white opacity-0 group-hover/segment:opacity-100 transition-opacity">
+                                    {count}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Month Label */}
+                          <span className="absolute -bottom-6 text-[10px] sm:text-xs font-bold text-slate-400 select-none">
+                            {monthInfo.month.slice(5)}月
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
 
+
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-slate-900">名词定义</h2>
-            <p className="mt-3 text-slate-600 leading-7">
-              <span className="font-semibold">DCP</span>: Design Change Plan 设计变更计划<br />
-              <span className="font-semibold">CR</span>:  Change Request 变更申请<br />
-              <span className="font-semibold">CN</span>:  Change Notification 变更通知<br />
-              <span className="font-semibold">TD</span>:  Technical Document 技术文件<br />
-              <span className="font-semibold">DHF</span>: Design History File 设计历史文件<br />
-              <span className="font-semibold">DMR</span>: Device Master Record 器械主记录
-            </p>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">CR/CN钉钉流程讲解</h2>
+            <video
+              src="http://192.168.122.193:28887/buckets/yiyi/video/CR&CN-20260705.mp4"
+              loop
+              playsInline
+              className="w-full rounded-xl"
+              onMouseEnter={(e) => e.currentTarget.play()}
+              onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+              style={{ maxHeight: '240px', objectFit: 'cover' }}
+            />
+            <p className="mt-3 text-xs text-slate-500">鼠标悬停自动播放，移开暂停。视频创作灵感来自“整体论/简化论”</p>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col justify-between">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col justify-between" data-tour="home-contributors">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h2 
