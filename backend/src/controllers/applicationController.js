@@ -22,21 +22,79 @@ function getCooldownSeconds() {
 }
 
 /**
- * 生成流水号
+ * 技术文件取号类别规则表
+ * middleType: 'project' 需要项目代号；'fixed' 使用固定中间段 fixedMiddle；'subcategory' 使用子类型作为中间段
+ * subCategory: 存入 sub_category 列，用于展示与部分编号格式
+ * serialWidth: 流水号补零宽度
+ * serialStart: 流水号起始值（程序类从 1000000 起）
+ * serialPrefix: 流水号前缀（程序类为 'S'）
+ * serialGroup: 'COMMON' 与多个技术文件类别共用 6 位流水号；'PROGRAM' 程序类单独维护
  */
-function generateSerialNumber(db, numberType, projectCode) {
+const CATEGORY_RULES = {
+  PRODUCT_TECH:  { numberType: 'QTD',  middleType: 'project',    subCategory: null,   serialWidth: 6, serialStart: 1, serialGroup: 'COMMON' },
+  GENERAL_TECH:  { numberType: 'QTD',  middleType: 'fixed',      fixedMiddle: 'CM', subCategory: null,   serialWidth: 6, serialStart: 1, serialGroup: 'COMMON' },
+  DHF:           { numberType: 'DHF',  middleType: 'project',    subCategory: null,   serialWidth: 6, serialStart: 1, serialGroup: 'COMMON' },
+  SOP:           { numberType: 'SOP',  middleType: 'project',    subCategory: null,   serialWidth: 6, serialStart: 1, serialGroup: 'COMMON' },
+  PROGRAM:       { numberType: 'SOFT', middleType: 'project',    subCategory: null,   serialWidth: 7, serialStart: 1000000, serialPrefix: 'S', serialGroup: 'PROGRAM' },
+  BOM:           { numberType: 'BOM',  middleType: 'project',    subCategory: null,   serialWidth: 6, serialStart: 1, serialGroup: 'COMMON' },
+  BOM_PCBA:      { numberType: 'BOM',  middleType: 'subcategory', subCategory: 'PCBA', serialWidth: 6, serialStart: 1, serialGroup: 'COMMON' },
+  OTHER_DRAWING: { numberType: 'DRW',  middleType: 'fixed',      fixedMiddle: 'CM', subCategory: null,   serialWidth: 6, serialStart: 1, serialGroup: 'COMMON' },
+};
+
+/**
+ * 按规则生成流水号
+ * COMMON 组跨 QTD/DHF/SOP/BOM/DRW 等 number_type 共用最大流水号；PROGRAM 组仅 SOFT 自增。
+ */
+function generateSerialNumberByRule(db, rule) {
+  const serialGroup = rule.serialGroup;
+  const serialStart = rule.serialStart;
+
+  if (serialGroup === 'COMMON') {
+    const commonTypes = ['QTD', 'DHF', 'SOP', 'BOM', 'DRW'];
+    const placeholders = commonTypes.map(() => '?').join(',');
+    const result = db.prepare(
+      `SELECT MAX(serial_number) as maxSerial FROM applications
+       WHERE number_type IN (${placeholders})`
+    ).get(...commonTypes);
+    return Math.max((result.maxSerial || 0) + 1, serialStart);
+  }
+
+  if (serialGroup === 'PROGRAM') {
+    const result = db.prepare(
+      `SELECT MAX(serial_number) as maxSerial FROM applications
+       WHERE number_type = ?`
+    ).get('SOFT');
+    return Math.max((result.maxSerial || 0) + 1, serialStart);
+  }
+
+  return serialStart;
+}
+
+/**
+ * 生成流水号：按 (number_type, project_code, sub_category) 三字段分组取 MAX+1（旧路径兼容）
+ */
+function generateSerialNumber(db, numberType, projectCode, subCategory) {
   const result = db.prepare(
-    'SELECT MAX(serial_number) as maxSerial FROM applications WHERE number_type = ? AND project_code = ?'
-  ).get(numberType, projectCode);
+    `SELECT MAX(serial_number) as maxSerial FROM applications
+     WHERE number_type = ? AND project_code = ? AND COALESCE(sub_category, '') = COALESCE(?, '')`
+  ).get(numberType, projectCode, subCategory || null);
 
   const nextSerial = (result.maxSerial || 0) + 1;
   return nextSerial;
 }
 
 /**
- * 格式化流水号
+ * 按规则格式化流水号
  */
-function formatSerialNumber(serial, numberType, projectCode) {
+function formatSerialByRule(serial, rule) {
+  const padded = String(serial).padStart(rule.serialWidth, '0');
+  return rule.serialPrefix ? `${rule.serialPrefix}${padded}` : padded;
+}
+
+/**
+ * 格式化流水号（旧路径兼容：变更管理表单 TD/CR/DCP/CN/QTD）
+ */
+function formatSerialNumberLegacy(serial, numberType, projectCode) {
   if (numberType === 'QTD') {
     const width = projectCode ? 4 : 6;
     return String(serial).padStart(width, '0');
@@ -49,18 +107,10 @@ function formatSerialNumber(serial, numberType, projectCode) {
  */
 async function createApplication(req, res) {
   try {
-    const { applicant_name, document_name = '', project_code = '', number_type, applicant_type, capToken } = req.body;
+    const { applicant_name, document_name = '', project_code = '', number_type, category, applicant_type, capToken } = req.body;
 
-    if (!applicant_name || !number_type) {
-      return errorResponse(res, 400, '申请人和编号类型不能为空');
-    }
-
-    if (number_type === 'QTD' && !document_name.trim()) {
-      return errorResponse(res, 400, '文档名称不能为空');
-    }
-
-    if (number_type !== 'QTD' && !project_code) {
-      return errorResponse(res, 400, '项目代号不能为空');
+    if (!applicant_name) {
+      return errorResponse(res, 400, '申请人不能为空');
     }
 
     // 人机验证（如果提供了 capToken）
@@ -92,78 +142,157 @@ async function createApplication(req, res) {
       }
     }
 
-    // 验证项目代号 / QTD 关键字是否存在
-    if (number_type === 'QTD') {
-      if (project_code) {
-        const validProject = db.prepare(
+    // ===== 技术文件取号：基于 category =====
+    let rule = null;
+    let finalNumberType = number_type;
+    let finalProjectCode = project_code;
+    let finalSubCategory = null;
+    let finalCategory = null;
+
+    if (category) {
+      rule = CATEGORY_RULES[category];
+      if (!rule) {
+        return errorResponse(res, 400, '编号类别不存在');
+      }
+      finalCategory = category;
+      finalNumberType = rule.numberType;
+      finalSubCategory = rule.subCategory;
+
+      if (!document_name.trim()) {
+        return errorResponse(res, 400, '文档名称不能为空');
+      }
+
+      if (rule.middleType === 'fixed') {
+        // 固定中间段（通用技术 CM / 其他图纸 CM），不校验项目
+        finalProjectCode = rule.fixedMiddle;
+      } else {
+        // 项目类及子类型中间段（project / subcategory）均需项目代号，但 subcategory 格式不显示项目代号
+        if (!project_code || !project_code.trim()) {
+          return errorResponse(res, 400, '项目代号不能为空');
+        }
+        finalProjectCode = project_code.trim();
+
+        const project = db.prepare(
+          'SELECT * FROM projects WHERE code = ? AND status IN (?, ?)'
+        ).get(finalProjectCode, 'approved', 'pending');
+        if (!project) {
+          const rejectedProject = db.prepare(
+            'SELECT * FROM projects WHERE code = ? AND status = ?'
+          ).get(finalProjectCode, 'rejected');
+          if (rejectedProject) {
+            return errorResponse(res, 400, '该项目代号未通过审核，无法提交申请');
+          }
+          return errorResponse(res, 400, '项目代号不存在');
+        }
+      }
+      // category 路径跳过 number_types 表存在性校验（类别即权威来源）
+
+    } else {
+      // ===== 旧路径：变更管理表单 TD/CR/DCP/CN/QTD =====
+      if (!number_type) {
+        return errorResponse(res, 400, '编号类型不能为空');
+      }
+
+      if (number_type === 'QTD' && !document_name.trim()) {
+        return errorResponse(res, 400, '文档名称不能为空');
+      }
+
+      if (number_type !== 'QTD' && !project_code) {
+        return errorResponse(res, 400, '项目代号不能为空');
+      }
+
+      // 验证项目代号 / QTD 关键字是否存在
+      if (number_type === 'QTD') {
+        if (project_code) {
+          const validProject = db.prepare(
+            'SELECT * FROM projects WHERE code = ? AND status IN (?, ?)'
+          ).get(project_code, 'approved', 'pending');
+          const validKeyword = db.prepare(
+            'SELECT * FROM technical_document_keywords WHERE keyword = ? AND status IN (?, ?)'
+          ).get(project_code, 'approved', 'pending');
+
+          if (!validProject && !validKeyword) {
+            const rejectedProject = db.prepare(
+              'SELECT * FROM projects WHERE code = ? AND status = ?'
+            ).get(project_code, 'rejected');
+            if (rejectedProject) {
+              return errorResponse(res, 400, '该项目代号未通过审核，无法提交申请');
+            }
+
+            const rejectedKeyword = db.prepare(
+              'SELECT * FROM technical_document_keywords WHERE keyword = ? AND status = ?'
+            ).get(project_code, 'rejected');
+            if (rejectedKeyword) {
+              return errorResponse(res, 400, '该 QTD 关键字未通过审核，无法提交申请');
+            }
+
+            return errorResponse(res, 400, 'QTD 关键字不存在');
+          }
+        }
+      } else {
+        const project = db.prepare(
           'SELECT * FROM projects WHERE code = ? AND status IN (?, ?)'
         ).get(project_code, 'approved', 'pending');
-        const validKeyword = db.prepare(
-          'SELECT * FROM technical_document_keywords WHERE keyword = ? AND status IN (?, ?)'
-        ).get(project_code, 'approved', 'pending');
-
-        if (!validProject && !validKeyword) {
+        if (!project) {
           const rejectedProject = db.prepare(
             'SELECT * FROM projects WHERE code = ? AND status = ?'
           ).get(project_code, 'rejected');
           if (rejectedProject) {
             return errorResponse(res, 400, '该项目代号未通过审核，无法提交申请');
           }
-
-          const rejectedKeyword = db.prepare(
-            'SELECT * FROM technical_document_keywords WHERE keyword = ? AND status = ?'
-          ).get(project_code, 'rejected');
-          if (rejectedKeyword) {
-            return errorResponse(res, 400, '该 QTD 关键字未通过审核，无法提交申请');
-          }
-
-          return errorResponse(res, 400, 'QTD 关键字不存在');
+          return errorResponse(res, 400, '项目代号不存在');
         }
+      }
+
+      // 验证编号类型是否存在（允许 approved 和 pending 状态）
+      const numberType = db.prepare(
+        'SELECT * FROM number_types WHERE type_code = ? AND status IN (?, ?)'
+      ).get(number_type, 'approved', 'pending');
+      if (!numberType) {
+        const rejectedNumberType = db.prepare(
+          'SELECT * FROM number_types WHERE type_code = ? AND status = ?'
+        ).get(number_type, 'rejected');
+        if (rejectedNumberType) {
+          return errorResponse(res, 400, '该编号类型未通过审核，无法提交申请');
+        }
+        return errorResponse(res, 400, '编号类型不存在');
+      }
+    }
+
+    // 生成流水号与完整编号
+    let serialNumber;
+    let formattedSerial;
+    let fullNumber;
+
+    if (rule) {
+      serialNumber = generateSerialNumberByRule(db, rule);
+      formattedSerial = formatSerialByRule(serialNumber, rule);
+      if (rule.middleType === 'fixed') {
+        fullNumber = `${finalNumberType}-${rule.fixedMiddle}-${formattedSerial}`;
+      } else if (rule.middleType === 'subcategory') {
+        // 子类型作为中间段，不显示项目代号，如 BOM-PCBA-000001
+        fullNumber = `${finalNumberType}-${finalSubCategory}-${formattedSerial}`;
+      } else if (finalSubCategory) {
+        // BOM 旧兼容：四段 BOM-{子类型}-{项目}-{流水号}
+        fullNumber = `${finalNumberType}-${finalSubCategory}-${finalProjectCode}-${formattedSerial}`;
+      } else {
+        fullNumber = `${finalNumberType}-${finalProjectCode}-${formattedSerial}`;
       }
     } else {
-      const project = db.prepare(
-        'SELECT * FROM projects WHERE code = ? AND status IN (?, ?)'
-      ).get(project_code, 'approved', 'pending');
-      if (!project) {
-        const rejectedProject = db.prepare(
-          'SELECT * FROM projects WHERE code = ? AND status = ?'
-        ).get(project_code, 'rejected');
-        if (rejectedProject) {
-          return errorResponse(res, 400, '该项目代号未通过审核，无法提交申请');
-        }
-        return errorResponse(res, 400, '项目代号不存在');
-      }
+      serialNumber = generateSerialNumber(db, number_type, project_code, null);
+      formattedSerial = formatSerialNumberLegacy(serialNumber, number_type, project_code);
+      fullNumber = number_type === 'QTD' && !project_code
+        ? `${number_type}-${formattedSerial}`
+        : `${number_type}-${project_code}-${formattedSerial}`;
     }
-
-    // 验证编号类型是否存在（允许 approved 和 pending 状态）
-    const numberType = db.prepare(
-      'SELECT * FROM number_types WHERE type_code = ? AND status IN (?, ?)'
-    ).get(number_type, 'approved', 'pending');
-    if (!numberType) {
-      // 检查是否是 rejected 状态
-      const rejectedNumberType = db.prepare(
-        'SELECT * FROM number_types WHERE type_code = ? AND status = ?'
-      ).get(number_type, 'rejected');
-      if (rejectedNumberType) {
-        return errorResponse(res, 400, '该编号类型未通过审核，无法提交申请');
-      }
-      return errorResponse(res, 400, '编号类型不存在');
-    }
-
-    // 生成流水号
-    const serialNumber = generateSerialNumber(db, number_type, project_code);
-    const formattedSerial = formatSerialNumber(serialNumber, number_type, project_code);
-    const fullNumber = number_type === 'QTD' && !project_code
-      ? `${number_type}-${formattedSerial}`
-      : `${number_type}-${project_code}-${formattedSerial}`;
 
     // 获取 IP
     const ipAddress = getClientIP(req);
 
     // 插入记录
     const result = db.prepare(
-      'INSERT INTO applications (applicant_name, applicant_type, document_name, project_code, number_type, serial_number, full_number, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)' 
-    ).run(applicant_name, applicant_type || '', document_name || '', project_code, number_type, serialNumber, fullNumber, ipAddress);
+      'INSERT INTO applications (applicant_name, applicant_type, document_name, project_code, number_type, serial_number, full_number, ip_address, category, sub_category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(applicant_name, applicant_type || '', document_name || '', finalProjectCode, finalNumberType, serialNumber, fullNumber, ipAddress, finalCategory, finalSubCategory);
 
     const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(result.lastInsertRowid);
     return successResponse(res, application, '申请成功');
@@ -178,7 +307,7 @@ async function createApplication(req, res) {
  */
 function getApplications(req, res) {
   try {
-    const { page = 1, limit = 10, keyword, project_code, number_type, exclude_type, start_date, end_date, applicant_type, applicant_name, ip_address, sort_by, sort_order } = req.query;
+    const { page = 1, limit = 10, keyword, project_code, number_type, category, exclude_type, start_date, end_date, applicant_type, applicant_name, ip_address, sort_by, sort_order } = req.query;
     const db = getDatabase();
 
     // 排序字段白名单校验
@@ -253,6 +382,17 @@ function getApplications(req, res) {
       } else {
         whereClauses.push('LOWER(number_type) != LOWER(?)');
         params.push(exclude_type);
+      }
+    }
+
+    // 类别过滤（支持逗号分隔的多个类别；BOM 兼容旧子类型 BOM_ASSE / BOM_SOFT）
+    if (category) {
+      let catList = category.split(',').map(c => c.trim()).filter(Boolean);
+      catList = catList.flatMap(c => c === 'BOM' ? ['BOM', 'BOM_ASSE', 'BOM_SOFT'] : [c]);
+      if (catList.length > 0) {
+        const placeholders = catList.map(() => '?').join(', ');
+        whereClauses.push(`LOWER(COALESCE(category, '')) IN (${placeholders})`);
+        params.push(...catList.map(c => c.toLowerCase()));
       }
     }
 
@@ -345,6 +485,34 @@ function getStats(req, res) {
 }
 
 /**
+ * 更新申请记录（目前仅允许修改文档名称）
+ */
+function updateApplication(req, res) {
+  try {
+    const { id } = req.params;
+    const { document_name } = req.body;
+    const db = getDatabase();
+
+    const existing = db.prepare('SELECT * FROM applications WHERE id = ?').get(id);
+    if (!existing) {
+      return errorResponse(res, 404, '申请记录不存在');
+    }
+
+    // 仅允许更新 document_name；其余字段保持不变
+    db.prepare('UPDATE applications SET document_name = ? WHERE id = ?').run(
+      document_name === undefined ? existing.document_name : document_name,
+      id
+    );
+
+    const updated = db.prepare('SELECT * FROM applications WHERE id = ?').get(id);
+    return successResponse(res, updated, '更新成功');
+  } catch (error) {
+    console.error('Update application error:', error);
+    return errorResponse(res, 500, '更新申请记录失败');
+  }
+}
+
+/**
  * 删除单条申请 (管理员)
  */
 function deleteApplication(req, res) {
@@ -396,7 +564,7 @@ function exportCSV(req, res) {
     const applications = db.prepare('SELECT * FROM applications ORDER BY created_at DESC').all();
 
     // CSV 头部
-    const headers = ['ID', '申请人', '文档名称', '申请人类型', '项目代号', '编号类型', '流水号', '完整编号', 'IP 地址', '申请时间'];
+    const headers = ['ID', '申请人', '文档名称', '申请人类型', '项目代号', '编号类型', '类别', '子类别', '流水号', '完整编号', 'IP 地址', '申请时间'];
     
     // CSV 内容
     const rows = applications.map(app => [
@@ -406,6 +574,8 @@ function exportCSV(req, res) {
       app.applicant_type || '',
       app.project_code,
       app.number_type,
+      app.category || '',
+      app.sub_category || '',
       app.serial_number,
       app.full_number,
       app.ip_address || '',
@@ -435,6 +605,7 @@ module.exports = {
   createApplication,
   getApplications,
   getStats,
+  updateApplication,
   deleteApplication,
   batchDeleteApplications,
   exportCSV,

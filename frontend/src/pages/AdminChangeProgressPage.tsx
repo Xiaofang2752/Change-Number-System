@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { changeProgressAPI, projectAPI } from '../services';
 import type { ChangeProgress, Project } from '../services';
@@ -8,18 +8,51 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
-import { Trash2, Edit, Plus, X, Search } from 'lucide-react';
+import { Trash2, Edit, Plus, X, Search, Upload, Download, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
+
+interface ImportError {
+  line: number | string;
+  reason: string;
+}
+
+interface ImportResult {
+  imported: { line: number; cr_no: string; dcp_no: string; cn_no: string }[];
+  skipped: { line: number; reason: string }[];
+  errors: ImportError[];
+}
+
+// 模板列定义（顺序即 Excel 列顺序）
+const TEMPLATE_HEADERS = [
+  '所属项目代号',
+  'CR No.',
+  'DCP No.',
+  'CN No.',
+  '变更描述',
+  '是否影响法规(是/否)',
+  '法规内容',
+  'CR进度',
+  'CN进度',
+];
 
 export function AdminChangeProgressPage() {
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [list, setList] = useState<ChangeProgress[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ChangeProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 导入相关状态
+  const [importEntries, setImportEntries] = useState<Partial<ChangeProgress>[]>([]);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [fileInfo, setFileInfo] = useState<string | null>(null);
 
   // 表单状态
   const [form, setForm] = useState({
@@ -144,7 +177,133 @@ export function AdminChangeProgressPage() {
     if (text === '进行中') {
       return 'bg-blue-50 text-blue-700 border-blue-200';
     }
-    return 'bg-slate-50 text-slate-600 border-slate-200'; // Default styling
+    return 'bg-slate-50 text-slate-600 border-slate-200';
+  };
+
+  // ===== 导入/导出/模板 =====
+
+  const handleDownloadTemplate = () => {
+    const worksheetData = [
+      TEMPLATE_HEADERS,
+      ['ALPHA01', 'CR-2026-001', 'DCP-2026-001', 'CN-2026-001', '示例：电源模块变更', '否', '', '已完成', '进行中'],
+      ['BETA88', 'CR-2026-002', 'DCP-2026-002', '', '示例：软件版本升级', '是', '影响 GB9706.1 电气安全', '进行中', '未发起'],
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    worksheet['!cols'] = [
+      { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
+      { wch: 30 }, { wch: 16 }, { wch: 30 }, { wch: 14 }, { wch: 14 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '变更进度导入模板');
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', '变更进度导入模板.xlsx');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileInfo(file.name);
+    setImportResult(null);
+
+    const isCsvOrTxt = /\.(csv|txt)$/i.test(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const content = evt.target?.result;
+        if (!content) {
+          alert('文件内容为空');
+          return;
+        }
+        let rows: string[][] = [];
+        if (isCsvOrTxt) {
+          // CSV/TXT: 按行读取，支持英文/中文逗号分隔
+          const text = String(content);
+          rows = text.split(/\r?\n/).filter(l => l.trim()).map(l => {
+            // 简易 CSV 解析：支持逗号分隔
+            return l.split(/,|，/).map(c => c.trim());
+          });
+        } else {
+          // Excel: 用 xlsx 解析
+          const wb = XLSX.read(content, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: '' });
+        }
+        // 跳过表头行
+        const dataRows = rows.slice(1).map(r => r.map(c => String(c || '').trim()));
+        const entries: Partial<ChangeProgress>[] = dataRows
+          .filter(r => r.some(c => c))
+          .map(r => ({
+            project_code: r[0] || '',
+            cr_no: r[1] || '',
+            dcp_no: r[2] || '',
+            cn_no: r[3] || '',
+            change_description: r[4] || '',
+            affects_regulation: (r[5] === '是' || r[5] === '1') ? 1 : 0,
+            regulation_content: r[6] || '',
+            cr_progress: r[7] || '',
+            cn_progress: r[8] || '',
+          }));
+        setImportEntries(entries);
+      } catch (err) {
+        console.error('文件解析失败', err);
+        alert('文件解析失败，请检查格式');
+      }
+    };
+    if (isCsvOrTxt) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
+    // 清空 input 以便重复上传同一文件
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleClearImport = () => {
+    setImportEntries([]);
+    setImportResult(null);
+    setFileInfo(null);
+  };
+
+  const handleImport = async () => {
+    if (importEntries.length === 0) {
+      alert('请先上传文件或手动添加数据');
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await changeProgressAPI.import({ entries: importEntries });
+      const result = (res as { data: ImportResult }).data;
+      setImportResult(result);
+      // 导入完成后刷新列表
+      loadData(searchQuery.trim());
+    } catch (err: unknown) {
+      const errorInfo = err as { response?: { data?: { message?: string } }; message?: string };
+      alert(errorInfo.response?.data?.message || errorInfo.message || '导入失败');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      await changeProgressAPI.exportCSV(searchQuery.trim() || undefined);
+    } catch (err) {
+      console.error('导出失败', err);
+      alert('导出失败，请重试');
+    }
+  };
+
+  const handleCloseImportModal = () => {
+    setShowImportModal(false);
+    handleClearImport();
   };
 
   return (
@@ -155,10 +314,20 @@ export function AdminChangeProgressPage() {
             <h2 className="text-2xl font-bold text-slate-800">变更完成进度管理</h2>
             <p className="text-sm text-muted-foreground mt-1">创建和维护前台展示的 DCP、CR、CN 进度卡片</p>
           </div>
-          <Button onClick={handleOpenCreate} className="flex items-center gap-1.5 shadow-sm">
-            <Plus className="h-4 w-4" />
-            新增进度记录
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleOpenCreate} className="flex items-center gap-1.5 shadow-sm">
+              <Plus className="h-4 w-4" />
+              新增进度记录
+            </Button>
+            <Button variant="outline" onClick={() => setShowImportModal(true)} className="flex items-center gap-1.5">
+              <Upload className="h-4 w-4" />
+              批量导入
+            </Button>
+            <Button variant="outline" onClick={handleExportCSV} className="flex items-center gap-1.5">
+              <Download className="h-4 w-4" />
+              导出 CSV
+            </Button>
+          </div>
         </div>
 
         {/* 搜索栏 */}
@@ -279,7 +448,6 @@ export function AdminChangeProgressPage() {
         {showCreateModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="relative w-full max-w-2xl bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-              {/* Header */}
               <div className="px-6 py-5 bg-gradient-to-r from-sky-50 via-cyan-50 to-slate-50 border-b border-sky-100 flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">
@@ -295,7 +463,6 @@ export function AdminChangeProgressPage() {
                 </button>
               </div>
 
-              {/* Form Content */}
               <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-4">
                 {error && (
                   <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
@@ -397,7 +564,6 @@ export function AdminChangeProgressPage() {
                   />
                 </div>
 
-                {/* Footer */}
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <Button type="button" variant="outline" onClick={() => setShowCreateModal(false)}>
                     取消
@@ -407,6 +573,152 @@ export function AdminChangeProgressPage() {
                   </Button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* 批量导入模态框 */}
+        {showImportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="relative w-full max-w-4xl bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+              <div className="px-6 py-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border-b border-emerald-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">批量导入变更进度</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">支持 Excel (.xlsx/.xls) 与 CSV 文件，按 CR/DCP/CN 编号组合去重</p>
+                </div>
+                <button
+                  onClick={handleCloseImportModal}
+                  className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {/* 操作区 */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="outline" onClick={handleDownloadTemplate} className="flex items-center gap-1.5">
+                    <FileSpreadsheet className="h-4 w-4" />
+                    下载导入模板
+                  </Button>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-input bg-background h-9 px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                    <Upload className="h-4 w-4" />
+                    选择文件
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {fileInfo && (
+                    <span className="text-xs text-slate-600">已加载: <span className="font-medium">{fileInfo}</span> · 共 {importEntries.length} 条</span>
+                  )}
+                  {importEntries.length > 0 && (
+                    <Button variant="ghost" size="sm" onClick={handleClearImport} className="ml-auto">
+                      清空
+                    </Button>
+                  )}
+                </div>
+
+                {/* 模板说明 */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 space-y-1">
+                  <p className="font-semibold text-slate-700">文件格式说明：</p>
+                  <p>第 1 行为表头（共 9 列）：<span className="font-mono">{TEMPLATE_HEADERS.join(' | ')}</span></p>
+                  <p>从第 2 行起为数据；"是否影响法规"列填 <span className="font-mono">是</span> 或 <span className="font-mono">否</span>；任一行全空将自动跳过。</p>
+                  <p>去重维度：CR/DCP/CN 编号三者组合，已存在的记录会跳过。</p>
+                </div>
+
+                {/* 预览表格 */}
+                {importEntries.length > 0 && (
+                  <div className="overflow-x-auto rounded-lg border max-h-72">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted sticky top-0">
+                        <tr>
+                          {TEMPLATE_HEADERS.map((h, i) => (
+                            <th key={i} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importEntries.slice(0, 200).map((entry, idx) => (
+                          <tr key={idx} className="border-b hover:bg-muted/50">
+                            <td className="px-3 py-2 whitespace-nowrap">{entry.project_code || ''}</td>
+                            <td className="px-3 py-2 whitespace-nowrap font-mono">{entry.cr_no || ''}</td>
+                            <td className="px-3 py-2 whitespace-nowrap font-mono">{entry.dcp_no || ''}</td>
+                            <td className="px-3 py-2 whitespace-nowrap font-mono">{entry.cn_no || ''}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate" title={entry.change_description}>{entry.change_description || ''}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{entry.affects_regulation ? '是' : '否'}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate" title={entry.regulation_content}>{entry.regulation_content || ''}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{entry.cr_progress || ''}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{entry.cn_progress || ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {importEntries.length > 200 && (
+                      <div className="text-center text-xs text-slate-500 py-2">仅预览前 200 条，实际将导入 {importEntries.length} 条</div>
+                    )}
+                  </div>
+                )}
+
+                {/* 导入结果 */}
+                {importResult && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                        <div className="text-xs text-emerald-700 font-semibold uppercase tracking-wider">成功导入</div>
+                        <div className="text-2xl font-bold text-emerald-700 mt-1">{importResult.imported.length}</div>
+                      </div>
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <div className="text-xs text-amber-700 font-semibold uppercase tracking-wider">跳过</div>
+                        <div className="text-2xl font-bold text-amber-700 mt-1">{importResult.skipped.length}</div>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <div className="text-xs text-red-700 font-semibold uppercase tracking-wider">错误</div>
+                        <div className="text-2xl font-bold text-red-700 mt-1">{importResult.errors.length}</div>
+                      </div>
+                    </div>
+                    {importResult.errors.length > 0 && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                        <p className="text-xs font-semibold text-red-800 mb-2">错误详情：</p>
+                        <ul className="text-xs text-red-700 space-y-1">
+                          {importResult.errors.map((err, idx) => (
+                            <li key={idx}>第 {err.line} 行: {err.reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {importResult.skipped.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                        <p className="text-xs font-semibold text-amber-800 mb-2">跳过详情：</p>
+                        <ul className="text-xs text-amber-700 space-y-1">
+                          {importResult.skipped.map((s, idx) => (
+                            <li key={idx}>第 {s.line} 行: {s.reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-end gap-3 px-6 py-4 border-t bg-slate-50">
+                <Button variant="outline" onClick={handleCloseImportModal}>
+                  关闭
+                </Button>
+                <Button
+                  onClick={handleImport}
+                  loading={importing}
+                  disabled={importEntries.length === 0}
+                  className="flex items-center gap-1.5"
+                >
+                  <Upload className="h-4 w-4" />
+                  开始导入 ({importEntries.length})
+                </Button>
+              </div>
             </div>
           </div>
         )}

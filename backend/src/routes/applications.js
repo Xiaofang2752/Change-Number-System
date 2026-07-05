@@ -15,6 +15,9 @@ router.get('/stats', applicationController.getStats);
 // 导出 CSV (需要管理员权限)
 router.get('/export', authMiddleware, applicationController.exportCSV);
 
+// 更新单条申请（目前仅允许修改文档名称）
+router.put('/:id', applicationController.updateApplication);
+
 // 删除单条申请 (需要管理员权限)
 router.delete('/:id', authMiddleware, applicationController.deleteApplication);
 

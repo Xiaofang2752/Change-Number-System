@@ -68,6 +68,8 @@ function initTestSchema(db) {
       serial_number INTEGER NOT NULL,
       full_number TEXT NOT NULL,
       ip_address TEXT,
+      category TEXT,
+      sub_category TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);

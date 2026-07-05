@@ -9,10 +9,14 @@ import { Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBeijingTime } from '@/utils/timezone';
 
+const TECH_NUMBER_TYPES = ['QTD', 'DHF', 'SOP', 'SOFT', 'BOM', 'DRW', 'HISTORICAL'];
+
 interface StatsData {
   total: number;
   byType?: Array<{ number_type: string; count: number }>;
 }
+
+
 
 export function ApplicationList() {
   const [applications, setApplications] = useState<Application[]>([]);
@@ -52,20 +56,20 @@ export function ApplicationList() {
       }
 
       const [appsRes, statsRes] = await Promise.all([
-        applicationAPI.getAll({ ...apiFilters, exclude_type: 'QTD,HISTORICAL', page: pagination.page, limit: pagination.limit }),
+        applicationAPI.getAll({ ...apiFilters, exclude_type: TECH_NUMBER_TYPES.join(','), page: pagination.page, limit: pagination.limit }),
         applicationAPI.getStats(),
       ]);
+
       setApplications((appsRes as { data: { data: Application[]; pagination: typeof pagination } }).data?.data || []);
       setPagination((appsRes as { data: { data: Application[]; pagination: typeof pagination } }).data?.pagination || pagination);
       
       const rawStats = (statsRes as { data: StatsData }).data || null;
       if (rawStats) {
-        const filteredByType = (rawStats.byType || []).filter(item => item.number_type !== 'QTD' && item.number_type !== 'HISTORICAL');
-        const qtdCount = (rawStats.byType || []).find(item => item.number_type === 'QTD')?.count || 0;
-        const historicalCount = (rawStats.byType || []).find(item => item.number_type === 'HISTORICAL')?.count || 0;
+        const filteredByType = (rawStats.byType || []).filter(item => !TECH_NUMBER_TYPES.includes(item.number_type));
+        const techCount = (rawStats.byType || []).filter(item => TECH_NUMBER_TYPES.includes(item.number_type)).reduce((sum, item) => sum + item.count, 0);
         setStats({
           ...rawStats,
-          total: rawStats.total - qtdCount - historicalCount,
+          total: Math.max(0, rawStats.total - techCount),
           byType: filteredByType,
         });
       } else {
@@ -87,7 +91,7 @@ export function ApplicationList() {
       ]);
       setProjects((projectsRes as { data: Project[] }).data || []);
       const rawTypes = (numberTypesRes as { data: NumberType[] }).data || [];
-      setNumberTypes(rawTypes.filter(nt => nt.type_code !== 'QTD'));
+      setNumberTypes(rawTypes.filter(nt => !TECH_NUMBER_TYPES.includes(nt.type_code)));
     } catch (err) {
       console.error('加载筛选选项失败', err);
     }
