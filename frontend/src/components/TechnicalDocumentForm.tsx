@@ -40,7 +40,7 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
   const [formData, setFormData] = useState({
     applicant_name: '',
     document_name: '',
-    category: 'PRODUCT_TECH' as string,
+    category: '',
     bomSubType: 'BOM' as string,
     project_code: '',
   });
@@ -131,6 +131,10 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
     }
     if (!formData.document_name.trim()) {
       setError('请填写文档名称');
+      return;
+    }
+    if (!formData.category) {
+      setError('请选择文件类别');
       return;
     }
     if (needProject && !formData.project_code.trim()) {

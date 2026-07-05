@@ -37,7 +37,6 @@ export function Layout({ children }: LayoutProps) {
     { label: '技术文件', path: '/admin/technical-documents', icon: FileText },
     { label: '项目管理', path: '/admin/projects', icon: Database },
     { label: '编号类型', path: '/admin/number-types', icon: Settings },
-    { label: '技术文件', path: '/admin/technical-documents', icon: FileText },
     { label: '人工审核', path: '/admin/review', icon: ShieldCheck },
     { label: '变更进度', path: '/admin/change-progress', icon: TrendingUp },
     { label: '贡献者', path: '/admin/contributors', icon: Award },
