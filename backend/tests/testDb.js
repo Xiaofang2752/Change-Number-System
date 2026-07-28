@@ -70,6 +70,7 @@ function initTestSchema(db) {
       ip_address TEXT,
       category TEXT,
       sub_category TEXT,
+      source_number TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
