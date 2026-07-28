@@ -19,7 +19,7 @@ interface TechnicalDocumentFormProps {
   onApplicationSubmitted?: () => void;
 }
 
-// 技术文件取号类别（7 类）
+// 技术文件取号类别（7 类 + 记录表单）
 export const TECH_CATEGORIES = [
   { code: 'PRODUCT_TECH', name: '产品技术文件', format: 'QTD-项目代号-6位流水号', needProject: true, hint: '工艺流程图、工艺规程、使用说明书属于此类' },
   { code: 'GENERAL_TECH', name: '通用技术', format: 'QTD-CM-6位流水号', needProject: true, hint: '通用技术指南、技术规范、规定、标准属于此类' },
@@ -28,7 +28,11 @@ export const TECH_CATEGORIES = [
   { code: 'PROGRAM', name: '程序', format: 'SOFT-项目代号-S1+6位流水号', needProject: true, hint: '固件、应用软件、工具驱动、配置参数、软件清单等属于此类' },
   { code: 'BOM', name: 'BOM', format: 'BOM-子类型-项目代号-6位流水号', needProject: true, hint: '仪器、模块、PCBA、软件等属于此类', hasSubType: true },
   { code: 'OTHER_DRAWING', name: '其他图纸', format: 'DRW-CM-6位流水号', needProject: false, hint: '指除机械图纸、线材图纸外，不在规范内的图纸' },
+  { code: 'RECORD_FORM', name: '记录表单', format: '源文件编号-R001', needProject: false, hint: '从产品技术文件/通用技术/DHF/SOP 类文件中引出记录表单，编号为 源文件编号-R001' },
 ] as const;
+
+// 记录表单可派生的源文件类别
+export const RECORD_FORM_SOURCE_TYPES = ['PRODUCT_TECH', 'GENERAL_TECH', 'DHF', 'SOP'];
 
 // BOM 子类型（2 类）
 export const BOM_SUBTYPES = [
@@ -43,6 +47,7 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
     category: '',
     bomSubType: 'BOM' as string,
     project_code: '',
+    source_number: '',
   });
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,6 +59,8 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
   const [copiedNumber, setCopiedNumber] = useState<string | null>(null);
   const [captchaKey, setCaptchaKey] = useState(0);
   const [capToken, setCapToken] = useState<string | null>(null);
+  const [dupConflict, setDupConflict] = useState<{ full_number: string; document_name: string } | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null);
 
   const selectedCategory = TECH_CATEGORIES.find(c => c.code === formData.category);
   const needProject = selectedCategory?.needProject ?? false;
@@ -123,6 +130,49 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
     }
   }, []);
 
+  const submitApplication = useCallback(async (payload: Record<string, unknown>) => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const response = await applicationAPI.create(payload as Parameters<typeof applicationAPI.create>[0]);
+      const fullNumber = (response as { data: { full_number: string } }).data?.full_number || '申请成功';
+      setResult(fullNumber);
+
+      if (onApplicationSubmitted) {
+        onApplicationSubmitted();
+      }
+
+      startCooldown();
+      setFormData(prev => ({ ...prev, project_code: '', source_number: '' }));
+      setCapToken(null);
+      setCaptchaKey(prev => prev + 1);
+      setDupConflict(null);
+      setPendingPayload(null);
+    } catch (err: unknown) {
+      const info = err as {
+        response?: {
+          status: number;
+          data?: { retryAfter?: number; message?: string; error?: { conflict?: boolean; existing?: { full_number: string; document_name: string } } };
+        };
+        message?: string;
+      };
+      if (info.response?.status === 429) {
+        const retryAfter = info.response?.data?.retryAfter || cooldownConfig;
+        setError(`请求过于频繁，请等待 ${retryAfter} 秒后再次取号`);
+        startCooldown(retryAfter);
+      } else if (info.response?.status === 409 && info.response?.data?.error?.conflict) {
+        // 同名冲突：弹出二次确认，不消耗验证码（pendingPayload 仍保留 capToken）
+        setDupConflict(info.response.data.error.existing || null);
+        setPendingPayload(payload);
+      } else {
+        setError(info.response?.data?.message || info.message || '提交申请失败');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [onApplicationSubmitted, cooldownConfig, startCooldown]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.applicant_name.trim()) {
@@ -141,6 +191,10 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
       setError('请选择项目代号');
       return;
     }
+    if (formData.category === 'RECORD_FORM' && !formData.source_number.trim()) {
+      setError('请填写源文件编号');
+      return;
+    }
     if (!capToken) {
       setError('请完成人机验证');
       return;
@@ -150,48 +204,26 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      // BOM 类别提交其子类型 code，其余提交类别 code 本身
-      const finalCategory = formData.category === 'BOM' ? formData.bomSubType : formData.category;
-      const projectCode = needProject ? formData.project_code.trim() : '';
-      const response = await applicationAPI.create({
-        applicant_name: formData.applicant_name.trim(),
-        document_name: formData.document_name.trim(),
-        project_code: projectCode,
-        category: finalCategory,
-        capToken,
-      });
-
-      const fullNumber = (response as { data: { full_number: string } }).data?.full_number || '申请成功';
-      setResult(fullNumber);
-
-      if (onApplicationSubmitted) {
-        onApplicationSubmitted();
-      }
-
-      startCooldown();
-      setFormData(prev => ({ ...prev, project_code: '' }));
-      setCapToken(null);
-      setCaptchaKey(prev => prev + 1);
-    } catch (err: unknown) {
-      const errorInfo = err as { response?: { status: number; data?: { retryAfter?: number } }; message?: string };
-      if (errorInfo.response?.status === 429) {
-        const retryAfter = errorInfo.response?.data?.retryAfter || cooldownConfig;
-        setError(`请求过于频繁，请等待 ${retryAfter} 秒后再次取号`);
-        startCooldown(retryAfter);
-      } else {
-        setError(errorInfo.message || '提交申请失败');
-      }
-    } finally {
-      setLoading(false);
+    // BOM 类别提交其子类型 code，其余提交类别 code 本身
+    const finalCategory = formData.category === 'BOM' ? formData.bomSubType : formData.category;
+    const projectCode = needProject ? formData.project_code.trim() : '';
+    const payload: Record<string, unknown> = {
+      applicant_name: formData.applicant_name.trim(),
+      document_name: formData.document_name.trim(),
+      category: finalCategory,
+      capToken,
+    };
+    if (formData.category === 'RECORD_FORM') {
+      payload.source_number = formData.source_number.trim();
+    } else {
+      payload.project_code = projectCode;
     }
+
+    await submitApplication(payload);
   };
 
   return (
+    <>
     <Card className="w-full max-w-full relative overflow-hidden border-2 border-sky-300/30 shadow-2xl shadow-sky-200/40">
       <div className="absolute inset-0 bg-gradient-to-br from-sky-50 via-transparent to-white pointer-events-none" />
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-500 animate-pulse" />
@@ -345,6 +377,25 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
             </div>
           )}
 
+          {formData.category === 'RECORD_FORM' && (
+            <div className="space-y-2 p-4 rounded-2xl border border-slate-200 bg-white">
+              <label className="text-sm font-semibold flex items-center gap-2">
+                <span className="text-lg">🔗</span>
+                源文件编号
+                <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={formData.source_number}
+                onChange={(e) => setFormData(prev => ({ ...prev, source_number: e.target.value }))}
+                placeholder="请输入源文件编号，如 SOP-CM-000001"
+                className="border-2 focus:border-sky-400"
+              />
+              <p className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                💡 记录表单将从该文件编号派生，生成如 {formData.source_number.trim() || 'SOP-CM-000001'}-R001 的编号（同一文件可派生 R001、R002…）
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2 p-4 rounded-2xl border border-slate-200 bg-white">
             <label className="text-sm font-semibold flex items-center gap-2">
               <span className="text-lg">🔒</span>
@@ -378,5 +429,43 @@ export function TechnicalDocumentForm({ onApplicationSubmitted }: TechnicalDocum
         </form>
       </CardContent>
     </Card>
+
+    {dupConflict && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+        onClick={() => { setDupConflict(null); setPendingPayload(null); }}
+      >
+        <div
+          className="relative w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-6 py-4 bg-gradient-to-r from-amber-50 to-slate-50 border-b border-amber-100 flex items-center gap-3">
+            <span className="text-2xl">⚠️</span>
+            <h3 className="text-lg font-bold text-slate-900">发现同名文件</h3>
+          </div>
+          <div className="p-6 space-y-3 text-sm text-slate-700">
+            <p>当前项目已存在同名文件：</p>
+            <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+              <div className="font-medium">{dupConflict.document_name}</div>
+              <div className="font-mono text-xs text-slate-500 mt-0.5">{dupConflict.full_number}</div>
+            </div>
+            <p className="text-muted-foreground">是否仍要创建该文件名称？</p>
+          </div>
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setDupConflict(null); setPendingPayload(null); }}>取消</Button>
+            <Button
+              onClick={() => {
+                const p = pendingPayload;
+                setDupConflict(null);
+                if (p) submitApplication({ ...p, confirmDuplicate: true });
+              }}
+            >
+              仍要创建
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

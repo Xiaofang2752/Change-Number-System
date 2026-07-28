@@ -42,6 +42,11 @@ const CATEGORY_RULES = {
 };
 
 /**
+ * 记录表单可派生的源文件类别（产品技术文件 / 通用技术 / DHF / SOP）
+ */
+const RECORD_FORM_SOURCE_TYPES = ['PRODUCT_TECH', 'GENERAL_TECH', 'DHF', 'SOP'];
+
+/**
  * 按规则生成流水号
  * COMMON 组跨 QTD/DHF/SOP/BOM/DRW 等 number_type 共用最大流水号；PROGRAM 组仅 SOFT 自增。
  */
@@ -107,20 +112,14 @@ function formatSerialNumberLegacy(serial, numberType, projectCode) {
  */
 async function createApplication(req, res) {
   try {
-    const { applicant_name, document_name = '', project_code = '', number_type, category, applicant_type, capToken } = req.body;
+    const { applicant_name, document_name = '', project_code = '', number_type, category, applicant_type, capToken, source_number } = req.body;
 
     if (!applicant_name) {
       return errorResponse(res, 400, '申请人不能为空');
     }
 
-    // 人机验证（如果提供了 capToken）
-    if (capToken) {
-      const cap = require('../cap');
-      const { success } = await cap.validateToken(capToken, { keepToken: false });
-      if (!success) {
-        return errorResponse(res, 400, '人机验证失败，请重新验证');
-      }
-    }
+    // 强制创建（用户在同名冲突提示后选择仍要创建）
+    const forceCreate = req.body.confirmDuplicate === true;
 
     const db = getDatabase();
 
@@ -131,7 +130,7 @@ async function createApplication(req, res) {
       'SELECT created_at FROM applications WHERE ip_address = ? ORDER BY created_at DESC LIMIT 1'
     ).get(clientIP);
 
-    if (recentApplication) {
+    if (recentApplication && !forceCreate) {
       const lastSubmitTime = new Date(recentApplication.created_at).getTime();
       const now = Date.now();
       const elapsedSeconds = (now - lastSubmitTime) / 1000;
@@ -144,12 +143,54 @@ async function createApplication(req, res) {
 
     // ===== 技术文件取号：基于 category =====
     let rule = null;
+    let isRecordForm = false;
     let finalNumberType = number_type;
     let finalProjectCode = project_code;
     let finalSubCategory = null;
     let finalCategory = null;
+    let finalSourceNumber = null;
+    let serialNumber;
+    let fullNumber;
 
-    if (category) {
+    if (category === 'RECORD_FORM') {
+      // ===== 记录表单：从已存在的源文件编号派生 {源文件编号}-R{nnn} =====
+      isRecordForm = true;
+
+      if (!document_name.trim()) {
+        return errorResponse(res, 400, '文档名称不能为空');
+      }
+      if (!source_number || !source_number.trim()) {
+        return errorResponse(res, 400, '请填写源文件编号');
+      }
+
+      const sourceFullNumber = source_number.trim();
+      const source = db.prepare(
+        'SELECT * FROM applications WHERE full_number = ?'
+      ).get(sourceFullNumber);
+      if (!source) {
+        return errorResponse(res, 400, '源文件编号不存在');
+      }
+
+      const sourceCategory = source.category;
+      if (!RECORD_FORM_SOURCE_TYPES.includes(sourceCategory)) {
+        return errorResponse(res, 400, '该文件类别不支持引出记录表单（仅支持产品技术文件 / 通用技术 / DHF / SOP）');
+      }
+
+      // 同一源文件的记录表单按 R001、R002… 递增
+      const maxRow = db.prepare(
+        'SELECT MAX(serial_number) AS maxSerial FROM applications WHERE source_number = ? AND category = ?'
+      ).get(sourceFullNumber, 'RECORD_FORM');
+      const nextSerial = (maxRow.maxSerial || 0) + 1;
+
+      serialNumber = nextSerial;
+      finalCategory = 'RECORD_FORM';
+      finalNumberType = source.number_type;
+      finalProjectCode = source.project_code;
+      finalSubCategory = null;
+      finalSourceNumber = sourceFullNumber;
+      fullNumber = `${sourceFullNumber}-R${String(nextSerial).padStart(3, '0')}`;
+
+    } else if (category) {
       rule = CATEGORY_RULES[category];
       if (!rule) {
         return errorResponse(res, 400, '编号类别不存在');
@@ -259,12 +300,34 @@ async function createApplication(req, res) {
       }
     }
 
-    // 生成流水号与完整编号
-    let serialNumber;
-    let formattedSerial;
-    let fullNumber;
+    // ===== 同名文件查重（同一项目 + 同类别 + 相同文档名称，忽略大小写）=====
+    if (!forceCreate && category && document_name.trim()) {
+      const dup = db.prepare(
+        'SELECT id, full_number, document_name FROM applications WHERE project_code = ? AND category = ? AND LOWER(document_name) = LOWER(?)'
+      ).get(finalProjectCode, finalCategory, document_name.trim());
+      if (dup) {
+        return errorResponse(res, 409, '当前项目已存在同名文件', {
+          conflict: true,
+          existing: { full_number: dup.full_number, document_name: dup.document_name },
+        });
+      }
+    }
 
-    if (rule) {
+    // 人机验证（如果提供了 capToken）——置于查重之后，确保冲突提示不会消耗验证码
+    if (capToken) {
+      const cap = require('../cap');
+      const { success } = await cap.validateToken(capToken, { keepToken: false });
+      if (!success) {
+        return errorResponse(res, 400, '人机验证失败，请重新验证');
+      }
+    }
+
+    // 生成流水号与完整编号
+    let formattedSerial;
+
+    if (isRecordForm) {
+      // 记录表单的 serialNumber / fullNumber 已在 RECORD_FORM 分支内计算完成
+    } else if (rule) {
       serialNumber = generateSerialNumberByRule(db, rule);
       formattedSerial = formatSerialByRule(serialNumber, rule);
       if (rule.middleType === 'fixed') {
@@ -291,8 +354,8 @@ async function createApplication(req, res) {
 
     // 插入记录
     const result = db.prepare(
-      'INSERT INTO applications (applicant_name, applicant_type, document_name, project_code, number_type, serial_number, full_number, ip_address, category, sub_category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(applicant_name, applicant_type || '', document_name || '', finalProjectCode, finalNumberType, serialNumber, fullNumber, ipAddress, finalCategory, finalSubCategory);
+      'INSERT INTO applications (applicant_name, applicant_type, document_name, project_code, number_type, serial_number, full_number, ip_address, category, sub_category, source_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(applicant_name, applicant_type || '', document_name || '', finalProjectCode, finalNumberType, serialNumber, fullNumber, ipAddress, finalCategory, finalSubCategory, finalSourceNumber);
 
     const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(result.lastInsertRowid);
     return successResponse(res, application, '申请成功');
@@ -564,8 +627,8 @@ function exportCSV(req, res) {
     const applications = db.prepare('SELECT * FROM applications ORDER BY created_at DESC').all();
 
     // CSV 头部
-    const headers = ['ID', '申请人', '文档名称', '申请人类型', '项目代号', '编号类型', '类别', '子类别', '流水号', '完整编号', 'IP 地址', '申请时间'];
-    
+    const headers = ['ID', '申请人', '文档名称', '申请人类型', '项目代号', '编号类型', '类别', '子类别', '流水号', '完整编号', '源文件编号', 'IP 地址', '申请时间'];
+
     // CSV 内容
     const rows = applications.map(app => [
       app.id,
@@ -578,6 +641,7 @@ function exportCSV(req, res) {
       app.sub_category || '',
       app.serial_number,
       app.full_number,
+      app.source_number || '',
       app.ip_address || '',
       app.created_at,
     ]);

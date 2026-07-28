@@ -171,6 +171,23 @@ function migrateApplicationsCategoryTable() {
 
 migrateApplicationsCategoryTable();
 
+// 迁移: 为 applications 表新增 source_number 列（记录表单派生源文件编号）
+function migrateApplicationsSourceNumber() {
+  try {
+    const columns = db.prepare(`PRAGMA table_info('applications')`).all();
+    const hasSourceNumber = columns.some((column) => column.name === 'source_number');
+    if (!hasSourceNumber) {
+      console.log('Migrating applications table to add source_number column...');
+      db.exec(`ALTER TABLE applications ADD COLUMN source_number TEXT`);
+      console.log('applications table migration: source_number column added');
+    }
+  } catch (err) {
+    console.error('Migration applications source_number error:', err.message);
+  }
+}
+
+migrateApplicationsSourceNumber();
+
 // 创建用户项目代号申请表
 db.exec(`
   CREATE TABLE IF NOT EXISTS project_requests (
