@@ -36,6 +36,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'BOM_PCBA', label: 'BOM/PCBA' },
   { value: 'BOM_SOFT', label: 'BOM/软件清单' },
   { value: 'OTHER_DRAWING', label: '其他图纸' },
+  { value: 'RECORD_FORM', label: '记录表单' },
 ];
 
 function getCategoryLabel(category?: string | null): string {

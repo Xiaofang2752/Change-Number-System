@@ -47,6 +47,7 @@ export interface Application {
   sub_category?: string;
   serial_number: number;
   full_number: string;
+  source_number?: string;
   ip_address?: string;
   created_at: string;
 }
@@ -100,7 +101,7 @@ export const numberTypeAPI = {
 };
 
 export const applicationAPI = {
-  create: (data: { applicant_name: string; document_name?: string; project_code?: string; number_type?: string; category?: string; applicant_type?: string; capToken?: string }) =>
+  create: (data: { applicant_name: string; document_name?: string; project_code?: string; number_type?: string; category?: string; source_number?: string; applicant_type?: string; capToken?: string }) =>
     api.post('/applications', data),
   getAll: (params: { page?: number; limit?: number; keyword?: string; project_code?: string; number_type?: string; exclude_type?: string; category?: string; start_date?: string; end_date?: string; applicant_name?: string; ip_address?: string; sort_by?: string; sort_order?: string }) => api.get('/applications', { params }),
   update: (id: number, data: Partial<Application>) => api.put(`/applications/${id}`, data),
