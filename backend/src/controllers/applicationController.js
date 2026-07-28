@@ -118,14 +118,8 @@ async function createApplication(req, res) {
       return errorResponse(res, 400, '申请人不能为空');
     }
 
-    // 人机验证（如果提供了 capToken）
-    if (capToken) {
-      const cap = require('../cap');
-      const { success } = await cap.validateToken(capToken, { keepToken: false });
-      if (!success) {
-        return errorResponse(res, 400, '人机验证失败，请重新验证');
-      }
-    }
+    // 强制创建（用户在同名冲突提示后选择仍要创建）
+    const forceCreate = req.body.confirmDuplicate === true;
 
     const db = getDatabase();
 
@@ -136,7 +130,7 @@ async function createApplication(req, res) {
       'SELECT created_at FROM applications WHERE ip_address = ? ORDER BY created_at DESC LIMIT 1'
     ).get(clientIP);
 
-    if (recentApplication) {
+    if (recentApplication && !forceCreate) {
       const lastSubmitTime = new Date(recentApplication.created_at).getTime();
       const now = Date.now();
       const elapsedSeconds = (now - lastSubmitTime) / 1000;
@@ -303,6 +297,28 @@ async function createApplication(req, res) {
           return errorResponse(res, 400, '该编号类型未通过审核，无法提交申请');
         }
         return errorResponse(res, 400, '编号类型不存在');
+      }
+    }
+
+    // ===== 同名文件查重（同一项目 + 同类别 + 相同文档名称，忽略大小写）=====
+    if (!forceCreate && category && document_name.trim()) {
+      const dup = db.prepare(
+        'SELECT id, full_number, document_name FROM applications WHERE project_code = ? AND category = ? AND LOWER(document_name) = LOWER(?)'
+      ).get(finalProjectCode, finalCategory, document_name.trim());
+      if (dup) {
+        return errorResponse(res, 409, '当前项目已存在同名文件', {
+          conflict: true,
+          existing: { full_number: dup.full_number, document_name: dup.document_name },
+        });
+      }
+    }
+
+    // 人机验证（如果提供了 capToken）——置于查重之后，确保冲突提示不会消耗验证码
+    if (capToken) {
+      const cap = require('../cap');
+      const { success } = await cap.validateToken(capToken, { keepToken: false });
+      if (!success) {
+        return errorResponse(res, 400, '人机验证失败，请重新验证');
       }
     }
 
