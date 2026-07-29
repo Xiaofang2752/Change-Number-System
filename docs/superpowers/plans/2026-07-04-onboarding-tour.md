@@ -158,7 +158,7 @@ export const HOME_STEPS: DriveStep[] = [
     element: '[data-tour="home-entry"]',
     popover: {
       title: '取号入口',
-      description: '这里选择取号类型：变更管理类（DCP/CR/CN/TD）或技术文件类（DHF/DMR），点击卡片进入对应取号界面。',
+      description: '这里选择取号类型：变更管理类（DCP/CR/CN/TD/RWO）或技术文件类（DHF/DMR），点击卡片进入对应取号界面。',
       side: 'bottom' as const,
       align: 'center' as const,
     },

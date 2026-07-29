@@ -181,7 +181,7 @@ export function Home() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition-colors duration-300 group-hover:text-white/80">变更管理类</p>
-                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DCP / CR / CN / TD</h2>
+                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DCP/CR/CN/TD/RWO</h2>
                   </div>
                   <span className="text-3xl transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 select-none">🛠️</span>
                 </div>
@@ -198,7 +198,7 @@ export function Home() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition-colors duration-300 group-hover:text-white/80">技术文件类</p>
-                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DHF / DMR</h2>
+                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DHF/SOP/其他</h2>
                   </div>
                   <span className="text-3xl transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[6deg] select-none">📄</span>
                 </div>
