@@ -14,9 +14,10 @@ const typeColors: { [key: string]: string } = {
   CR: 'bg-rose-500',
   CN: 'bg-emerald-500',
   TD: 'bg-sky-500',
+  RWO: 'bg-purple-500',
 };
 
-const types = ['DCP', 'CR', 'CN', 'TD'];
+const types = ['DCP', 'CR', 'CN', 'TD', 'RWO'];
 
 const techCategories = [
   { code: 'PRODUCT_TECH', name: '产品技术文件', color: 'bg-violet-500' },
@@ -225,7 +226,7 @@ export function Home() {
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  变更管理 (DCP/CR/CN/TD)
+                  变更管理 (DCP/CR/CN/TD/RWO)
                 </button>
                 <button
                   onClick={() => setActiveStatTab('tech')}

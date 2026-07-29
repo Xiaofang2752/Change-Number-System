@@ -309,7 +309,7 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
             <CardTitle className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
               变更编号申请
             </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">DCP/CR/CN/TD取号</p>
+            <p className="text-sm text-muted-foreground mt-1">DCP/CR/CN/TD/RWO取号</p>
           </div>
         </div>
       </CardHeader>
