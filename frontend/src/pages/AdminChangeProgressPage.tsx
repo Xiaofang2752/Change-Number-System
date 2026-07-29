@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { changeProgressAPI, projectAPI } from '../services';
 import type { ChangeProgress, Project } from '../services';
 import { Layout } from '../components/Layout';
+import { DcpTemplateManager } from '../components/DcpTemplateManager';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -47,6 +48,9 @@ export function AdminChangeProgressPage() {
   const [processing, setProcessing] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ChangeProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 页签：变更进度管理 / DCP 模板维护
+  const [tab, setTab] = useState<'progress' | 'dcp'>('progress');
 
   // 导入相关状态
   const [importEntries, setImportEntries] = useState<Partial<ChangeProgress>[]>([]);
@@ -309,6 +313,31 @@ export function AdminChangeProgressPage() {
   return (
     <Layout>
       <div className="max-w-7xl mx-auto p-6 space-y-6">
+        {/* 页签切换 */}
+        <div className="flex gap-1 border-b border-slate-200">
+          <button
+            onClick={() => setTab('progress')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === 'progress'
+                ? 'border-sky-500 text-sky-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            变更进度管理
+          </button>
+          <button
+            onClick={() => setTab('dcp')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === 'dcp'
+                ? 'border-sky-500 text-sky-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            DCP 模板维护
+          </button>
+        </div>
+
+        {tab === 'progress' ? (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-slate-800">变更完成进度管理</h2>
@@ -329,8 +358,14 @@ export function AdminChangeProgressPage() {
             </Button>
           </div>
         </div>
+        ) : (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">DCP《设计变更方案》模板维护</h2>
+            <p className="text-sm text-muted-foreground mt-1">导入并维护用于自动生成 DCP《设计变更方案》的 Word(.docx) 模板</p>
+          </div>
+        )}
 
-        {/* 搜索栏 */}
+        {tab === 'progress' && (
         <div className="flex gap-3 max-w-md">
           <div className="relative flex-1">
             <Input
@@ -354,8 +389,11 @@ export function AdminChangeProgressPage() {
             搜索
           </Button>
         </div>
+        )}
 
-        {/* 列表显示 */}
+        {tab === 'dcp' && <DcpTemplateManager />}
+
+        {tab === 'progress' && (
         <Card className="shadow-md">
           <CardHeader className="py-4 border-b">
             <div className="flex items-center justify-between">
@@ -443,6 +481,7 @@ export function AdminChangeProgressPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* 新增/编辑模态框 */}
         {showCreateModal && (

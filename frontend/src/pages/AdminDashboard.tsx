@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { applicationAPI, projectAPI, numberTypeAPI, dcpAPI } from '../services';
+import { applicationAPI, projectAPI, numberTypeAPI } from '../services';
 import type { Project, NumberType } from '../services';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -36,11 +36,6 @@ export function AdminDashboard() {
   const [cooldownSeconds, setCooldownSeconds] = useState(10);
   const [updatingCooldown, setUpdatingCooldown] = useState(false);
 
-  // DCP《设计变更方案》模板状态
-  const [dcpTemplate, setDcpTemplate] = useState<{ exists: boolean; filename?: string; updated_at?: string } | null>(null);
-  const [dcpFile, setDcpFile] = useState<File | null>(null);
-  const [uploadingTemplate, setUploadingTemplate] = useState(false);
-
   // 通知状态
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -53,13 +48,12 @@ export function AdminDashboard() {
 
     const loadData = async () => {
       try {
-        const [statsRes, projectsRes, numberTypesRes, togglesRes, cooldownRes, dcpMetaRes] = await Promise.all([
+        const [statsRes, projectsRes, numberTypesRes, togglesRes, cooldownRes] = await Promise.all([
           applicationAPI.getStats(),
           projectAPI.getAll('pending'),
           numberTypeAPI.getAll('pending'),
           settingsAPI.getFeatureToggles(),
           settingsAPI.getCooldown(),
-          dcpAPI.getTemplateMeta().catch(() => null),
         ]);
         setStats((statsRes as { data: StatsData }).data || null);
         setPendingProjects(((projectsRes as { data: Project[] }).data || []).length);
@@ -69,9 +63,6 @@ export function AdminDashboard() {
           setFeatureToggles(togglesData);
         }
         setCooldownSeconds((cooldownRes as { data: { cooldown_seconds: number } }).data?.cooldown_seconds || 10);
-        if (dcpMetaRes) {
-          setDcpTemplate((dcpMetaRes as unknown as { data: { exists: boolean; filename?: string; updated_at?: string } }).data);
-        }
       } catch (err) {
         console.error('加载数据失败', err);
       } finally {
@@ -126,32 +117,6 @@ export function AdminDashboard() {
       setNotification({ message: (error as Error).message || '更新失败，请重试', type: 'error' });
     } finally {
       setUpdatingCooldown(false);
-    }
-  };
-
-  // 上传 DCP《设计变更方案》模板
-  const handleDcpTemplateUpload = async () => {
-    if (!dcpFile || uploadingTemplate) return;
-
-    if (!dcpFile.name.toLowerCase().endsWith('.docx')) {
-      setNotification({ message: '请上传 .docx 格式的 Word 模板', type: 'error' });
-      return;
-    }
-
-    try {
-      setUploadingTemplate(true);
-      const formData = new FormData();
-      formData.append('file', dcpFile);
-      const response = await dcpAPI.uploadTemplate(formData);
-      const data = (response as unknown as { data: { filename: string; updated_at: string } }).data;
-      setDcpTemplate({ exists: true, filename: data.filename, updated_at: data.updated_at });
-      setDcpFile(null);
-      setNotification({ message: 'DCP 模板已更新', type: 'success' });
-    } catch (error: unknown) {
-      console.error('上传 DCP 模板失败:', error);
-      setNotification({ message: (error as { message?: string }).message || '上传失败，请重试', type: 'error' });
-    } finally {
-      setUploadingTemplate(false);
     }
   };
 
@@ -394,65 +359,6 @@ export function AdminDashboard() {
 
               <div className="text-xs text-muted-foreground mt-2">
                 提示：设置范围为 5-60 秒，默认值为 10 秒。
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* DCP《设计变更方案》模板管理 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>DCP《设计变更方案》模板管理</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <div className="font-medium mb-1">当前模板状态</div>
-                <div className="text-sm text-muted-foreground">
-                  {dcpTemplate?.exists ? (
-                    <span>
-                      已上传模板：<span className="font-medium text-gray-700">{dcpTemplate.filename}</span>
-                      {dcpTemplate.updated_at && (
-                        <span> （更新于 {dcpTemplate.updated_at}）</span>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="text-orange-600">尚未上传模板，用户在提交 DCP 编号申请后将无法下载《设计变更方案》。</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="file"
-                  accept=".docx"
-                  onChange={(e) => setDcpFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
-                  className="block text-sm text-gray-600
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-md file:border-0
-                    file:text-sm file:font-medium
-                    file:bg-blue-50 file:text-blue-700
-                    hover:file:bg-blue-100"
-                />
-                <Button
-                  onClick={handleDcpTemplateUpload}
-                  disabled={!dcpFile || uploadingTemplate}
-                >
-                  {uploadingTemplate ? '上传中...' : '上传模板'}
-                </Button>
-                {dcpFile && (
-                  <span className="text-sm text-muted-foreground">已选择：{dcpFile.name}</span>
-                )}
-              </div>
-
-              <div className="text-xs text-muted-foreground leading-relaxed">
-                上传的 Word(.docx) 模板将用于自动生成 DCP《设计变更方案》。请在模板中使用以下占位符（大括号为英文半角），系统会自动替换为申请内容：
-                <div className="mt-2 space-y-1">
-                  <div><code className="bg-gray-100 px-1 rounded">{'{dcp_no}'}</code> — DCP 编号（自动填充申请后的编号）</div>
-                  <div><code className="bg-gray-100 px-1 rounded">{'{project_code}'}</code> — 项目代号</div>
-                  <div><code className="bg-gray-100 px-1 rounded">{'{applicant_name}'}</code> — 申请人</div>
-                  <div><code className="bg-gray-100 px-1 rounded">{'{date}'}</code> — 申请日期（YYYY-MM-DD）</div>
-                </div>
               </div>
             </div>
           </CardContent>
