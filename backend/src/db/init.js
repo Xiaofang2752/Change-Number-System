@@ -116,6 +116,39 @@ function migrateNumberTypes() {
 
 migrateNumberTypes();
 
+// 每次启动幂等补充预设编号类型 (供已存在的数据库补齐新类型)
+function seedPresetNumberTypes() {
+  try {
+    const tableInfo = db.prepare(`
+      SELECT sql FROM sqlite_master WHERE type='table' AND name='number_types'
+    `).get();
+    if (!tableInfo) return; // 表尚未创建, 等待 CREATE TABLE 处理
+
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO number_types (type_code, type_name, description, status, approved_at)
+      VALUES (?, ?, '', 'approved', CURRENT_TIMESTAMP)
+    `);
+    const presets = [
+      ['CR', 'Change Request'],
+      ['DCP', 'Design Change Proposal'],
+      ['CN', 'Change Notice'],
+      ['TD', 'Technical Document'],
+      ['QTD', 'Quaero Technical Document'],
+      ['RWO', 'Rework Order'],
+    ];
+    const tx = db.transaction(() => {
+      presets.forEach(([code, name]) => insert.run(code, name));
+    });
+    tx();
+    console.log('seedPresetNumberTypes: ensured preset number_types (incl. RWO) exist');
+  } catch (err) {
+    console.error('seedPresetNumberTypes error:', err.message);
+  }
+}
+
+seedPresetNumberTypes();
+
+
 function migrateApplicationsTable() {
   try {
     const columns = db.prepare(`PRAGMA table_info('applications')`).all();
@@ -322,6 +355,16 @@ db.exec(`
   );
 `);
 
+// 创建 DCP《设计变更方案》模板表（单例，id 固定为 1，存储管理员上传的 .docx 模板）
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dcp_template (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    filename TEXT,
+    content BLOB,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 // 迁移: 首次启动时把现有 10 条硬编码内容作为初始 published 版插入
 function migrateGuideQna() {
   try {
@@ -378,6 +421,7 @@ const insertPresets = db.transaction(() => {
   insertNumberType.run('CN', 'Change Notice');
   insertNumberType.run('TD', 'Technical Document');
   insertNumberType.run('QTD', 'Quaero Technical Document');
+  insertNumberType.run('RWO', 'Rework Order');
 
   // 插入默认功能开关（默认关闭）
   const insertSetting = db.prepare(`

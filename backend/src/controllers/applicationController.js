@@ -47,6 +47,11 @@ const CATEGORY_RULES = {
 const RECORD_FORM_SOURCE_TYPES = ['PRODUCT_TECH', 'GENERAL_TECH', 'DHF', 'SOP'];
 
 /**
+ * 记录表单流水号默认起始值（编号形如 源文件编号-R100）
+ */
+const RECORD_FORM_SERIAL_START = 100;
+
+/**
  * 按规则生成流水号
  * COMMON 组跨 QTD/DHF/SOP/BOM/DRW 等 number_type 共用最大流水号；PROGRAM 组仅 SOFT 自增。
  */
@@ -176,11 +181,12 @@ async function createApplication(req, res) {
         return errorResponse(res, 400, '该文件类别不支持引出记录表单（仅支持产品技术文件 / 通用技术 / DHF / SOP）');
       }
 
-      // 同一源文件的记录表单按 R001、R002… 递增
+      // 同一源文件的记录表单按 R100、R101… 递增（默认从 R100 开始）
       const maxRow = db.prepare(
         'SELECT MAX(serial_number) AS maxSerial FROM applications WHERE source_number = ? AND category = ?'
       ).get(sourceFullNumber, 'RECORD_FORM');
-      const nextSerial = (maxRow.maxSerial || 0) + 1;
+      const base = Math.max(RECORD_FORM_SERIAL_START - 1, maxRow.maxSerial || 0);
+      const nextSerial = base + 1;
 
       serialNumber = nextSerial;
       finalCategory = 'RECORD_FORM';

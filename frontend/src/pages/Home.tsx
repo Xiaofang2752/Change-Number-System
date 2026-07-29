@@ -14,9 +14,10 @@ const typeColors: { [key: string]: string } = {
   CR: 'bg-rose-500',
   CN: 'bg-emerald-500',
   TD: 'bg-sky-500',
+  RWO: 'bg-purple-500',
 };
 
-const types = ['DCP', 'CR', 'CN', 'TD'];
+const types = ['DCP', 'CR', 'CN', 'TD', 'RWO'];
 
 const techCategories = [
   { code: 'PRODUCT_TECH', name: '产品技术文件', color: 'bg-violet-500' },
@@ -99,7 +100,10 @@ export function Home() {
       recordsByType[type] = typeRecords;
     });
 
-    const total = dataForMonth.length;
+    // 变更管理统计仅统计 DCP/CR/CN/TD/RWO 这几种类型，其余类型归入技术文件统计
+    const changeApps = dataForMonth.filter(app => types.includes(app.number_type));
+    recordsByType['ALL'] = changeApps;
+    const total = changeApps.length;
 
     return {
       month,
@@ -177,7 +181,7 @@ export function Home() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition-colors duration-300 group-hover:text-white/80">变更管理类</p>
-                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DCP / CR / CN / TD</h2>
+                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DCP/CR/CN/TD/RWO</h2>
                   </div>
                   <span className="text-3xl transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 select-none">🛠️</span>
                 </div>
@@ -194,7 +198,7 @@ export function Home() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition-colors duration-300 group-hover:text-white/80">技术文件类</p>
-                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DHF / DMR</h2>
+                    <h2 className="mt-2 text-2xl font-bold text-slate-900 transition-colors duration-300 group-hover:text-white">DHF/SOP/其他</h2>
                   </div>
                   <span className="text-3xl transition-transform duration-300 group-hover:scale-125 group-hover:rotate-[6deg] select-none">📄</span>
                 </div>
@@ -225,7 +229,7 @@ export function Home() {
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  变更管理 (DCP/CR/CN/TD)
+                  变更管理 (DCP/CR/CN/TD/RWO)
                 </button>
                 <button
                   onClick={() => setActiveStatTab('tech')}
@@ -276,7 +280,7 @@ export function Home() {
 
                     {monthlyData.map(monthInfo => {
                       const barHeightPercent = maxTotal > 0 ? (monthInfo.total / maxTotal) * 100 : 0;
-                      const dataForMonth = applications.filter(app => app.created_at?.startsWith(monthInfo.month));
+                      const dataForMonth = monthInfo.recordsByType['ALL'] || [];
                       return (
                         <div key={monthInfo.month} className="flex flex-col items-center justify-end w-12 sm:w-16 h-full relative z-10 group">
                           {/* Total Value Clickable */}
@@ -411,7 +415,7 @@ export function Home() {
         </Card>
 
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2 hidden">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-xl font-semibold text-slate-900 mb-3">CR/CN钉钉流程讲解</h2>
             <video
