@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { dcpAPI } from '../services';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 
 interface DcpTemplateMeta {
   exists: boolean;
@@ -74,9 +74,7 @@ export function DcpTemplateManager() {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>DCP《设计变更方案》模板维护</CardTitle>
-        </CardHeader>
+        
         <CardContent>
           <div className="space-y-4">
             <div className="p-4 bg-gray-50 rounded-lg">

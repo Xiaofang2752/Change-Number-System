@@ -338,34 +338,9 @@ export function ChangeManagementPage() {
               <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
             </a>
           </div>
-
-          {/* 变更实施表填写说明 导航卡 */}
-          <a
-            href="/CI变更实施表填写说明.svg"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block px-2.5 sm:px-4 py-3.5 border-2 border-amber-200/60 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white/95 to-orange-50/40 shadow-sm hover:shadow-lg hover:border-amber-300/80 transition-all duration-300 relative overflow-hidden group/form"
-          >
-            <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#EF8641] via-amber-400 to-[#EF8641]" />
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-amber-100 text-amber-600 text-sm shrink-0 group-hover/form:scale-110 transition-transform duration-200">
-                📝
-              </span>
-              <span className="text-[11px] sm:text-xs font-black text-slate-800 tracking-tight leading-tight">
-                变更实施表如何填写？
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-500 leading-relaxed mb-2.5">
-              CI变更实施表填写说明图解
-            </p>
-            <div className="flex items-center justify-end gap-1 text-[10px] font-bold text-[#EF8641] group-hover/form:translate-x-0.5 transition-transform duration-200">
-              <span>查看说明</span>
-              <ArrowRight className="h-3 w-3" />
-            </div>
-          </a>
-          </div>
         </div>
-
+      </div>
+      
         {/* DCP, CR, CN 变更完成进度 - 还在测试中，先放在下方 */}
         <div className="col-span-12 mt-4">
           <Card className="border-sky-200 shadow-md" data-tour="change-progress">
