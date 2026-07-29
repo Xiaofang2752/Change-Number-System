@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { projectAPI, numberTypeAPI, applicationAPI, settingsAPI } from '../services';
+import { projectAPI, numberTypeAPI, applicationAPI, settingsAPI, dcpAPI } from '../services';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -45,6 +45,8 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
   const [numberTypes, setNumberTypes] = useState<NumberTypeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  // 记录本次生成结果对应的申请信息，用于 DCP《设计变更方案》下载判断
+  const [resultApp, setResultApp] = useState<{ id: number; number_type: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showProjectRequest, setShowProjectRequest] = useState(false);
   const [showNumberTypeRequest, setShowNumberTypeRequest] = useState(false);
@@ -245,6 +247,7 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
     setLoading(true);
     setError(null);
     setResult(null);
+    setResultApp(null);
 
     try {
       // 保存到 localStorage
@@ -253,8 +256,12 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
       }));
 
       const response = await applicationAPI.create({ ...formData, capToken } as { applicant_name: string; project_code: string; number_type: string; capToken: string });
-      const fullNumber = (response as { data: { full_number: string } }).data?.full_number || '申请成功';
+      const resData = (response as { data: { full_number: string; id: number; number_type: string } }).data;
+      const fullNumber = resData?.full_number || '申请成功';
       setResult(fullNumber);
+      if (resData?.id) {
+        setResultApp({ id: resData.id, number_type: resData.number_type });
+      }
 
       // 通知父组件刷新列表
       if (onApplicationSubmitted) {
@@ -345,6 +352,21 @@ export function ApplicationForm({ onApplicationSubmitted }: ApplicationFormProps
             {copiedNumber === result && (
               <div className="text-[10px] text-green-700 mt-2 font-medium bg-green-100/50 px-2 py-0.5 rounded inline-block">
                 ✓ 已复制到剪贴板
+              </div>
+            )}
+            {resultApp?.number_type === 'DCP' && (
+              <div className="mt-3 pt-3 border-t border-green-300/60">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => dcpAPI.download(resultApp.id)}
+                >
+                  📄 下载 DCP《设计变更方案》
+                </Button>
+                <span className="text-[10px] text-green-700 ml-2 align-middle">
+                  自动按管理员模板生成，已填充 DCP 编号
+                </span>
               </div>
             )}
           </div>

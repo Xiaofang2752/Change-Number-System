@@ -322,6 +322,16 @@ db.exec(`
   );
 `);
 
+// 创建 DCP《设计变更方案》模板表（单例，id 固定为 1，存储管理员上传的 .docx 模板）
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dcp_template (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    filename TEXT,
+    content BLOB,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 // 迁移: 首次启动时把现有 10 条硬编码内容作为初始 published 版插入
 function migrateGuideQna() {
   try {

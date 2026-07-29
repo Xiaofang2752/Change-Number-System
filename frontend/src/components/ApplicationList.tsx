@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { applicationAPI, projectAPI, numberTypeAPI } from '../services';
+import { applicationAPI, projectAPI, numberTypeAPI, dcpAPI } from '../services';
 import type { Project, NumberType, Application } from '../services';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -352,6 +352,17 @@ export function ApplicationList() {
                       <Badge variant="secondary" className="text-[10px] md:text-xs">{app.number_type}</Badge>
                     </div>
 
+                    {app.number_type === 'DCP' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => dcpAPI.download(app.id)}
+                      >
+                        📄 下载 DCP《设计变更方案》
+                      </Button>
+                    )}
+
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground pt-1 border-t border-dashed border-border/80">
                       <div>
                         <span className="font-medium text-foreground">申请人:</span> {app.applicant_name}
@@ -409,6 +420,7 @@ export function ApplicationList() {
                     <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">项目代号</th>
                     <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">编号类型</th>
                     <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">申请时间</th>
+                        <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">操作</th>
                         {isAdmin && <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap hidden sm:table-cell">IP 地址</th>}
                   </tr>
                 </thead>
@@ -458,6 +470,20 @@ export function ApplicationList() {
                         </td>
                         <td className="p-4 text-xs md:text-sm text-muted-foreground whitespace-nowrap">
                           {formatBeijingTime(app.created_at)}
+                        </td>
+                        <td className="p-4 text-xs md:text-sm whitespace-nowrap">
+                          {app.number_type === 'DCP' ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white whitespace-nowrap"
+                              onClick={() => dcpAPI.download(app.id)}
+                            >
+                              📄 下载
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </td>
                         {isAdmin && <td className="p-4 text-xs md:text-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">{app.ip_address || '-'}</td>}
                       </tr>

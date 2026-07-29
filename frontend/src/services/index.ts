@@ -129,6 +129,26 @@ export const applicationAPI = {
   },
 };
 
+export const dcpAPI = {
+  getTemplateMeta: () => api.get('/dcp/template'),
+  uploadTemplate: (formData: FormData) =>
+    api.post('/dcp/template', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        Authorization: localStorage.getItem('adminToken') ? `Bearer ${localStorage.getItem('adminToken')}` : '',
+      },
+    }),
+  // 触发浏览器下载已填充的 DCP《设计变更方案》.docx（文件名由后端 Content-Disposition 指定）
+  download: (id: number) => {
+    const a = document.createElement('a');
+    a.href = `/api/dcp/${id}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+};
+
 export const adminAPI = {
   login: (data: { username: string; password: string }) => api.post('/admin/login', data),
   logout: () => api.post('/admin/logout'),
