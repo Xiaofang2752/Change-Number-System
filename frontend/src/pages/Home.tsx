@@ -100,7 +100,10 @@ export function Home() {
       recordsByType[type] = typeRecords;
     });
 
-    const total = dataForMonth.length;
+    // 变更管理统计仅统计 DCP/CR/CN/TD/RWO 这几种类型，其余类型归入技术文件统计
+    const changeApps = dataForMonth.filter(app => types.includes(app.number_type));
+    recordsByType['ALL'] = changeApps;
+    const total = changeApps.length;
 
     return {
       month,
@@ -277,7 +280,7 @@ export function Home() {
 
                     {monthlyData.map(monthInfo => {
                       const barHeightPercent = maxTotal > 0 ? (monthInfo.total / maxTotal) * 100 : 0;
-                      const dataForMonth = applications.filter(app => app.created_at?.startsWith(monthInfo.month));
+                      const dataForMonth = monthInfo.recordsByType['ALL'] || [];
                       return (
                         <div key={monthInfo.month} className="flex flex-col items-center justify-end w-12 sm:w-16 h-full relative z-10 group">
                           {/* Total Value Clickable */}

@@ -11,6 +11,10 @@ import { formatBeijingTime } from '@/utils/timezone';
 
 const TECH_NUMBER_TYPES = ['QTD', 'DHF', 'SOP', 'SOFT', 'BOM', 'DRW', 'HISTORICAL'];
 
+// DCP 自动填充模板下载功能：2026-08-07 当天起前台开放，此前隐藏该入口
+const DCP_AUTO_FILL_ENABLED_FROM = '2026-08-07';
+const isDcpAutoFillEnabled = new Date() >= new Date(`${DCP_AUTO_FILL_ENABLED_FROM}T00:00:00`);
+
 interface StatsData {
   total: number;
   byType?: Array<{ number_type: string; count: number }>;
@@ -352,7 +356,7 @@ export function ApplicationList() {
                       <Badge variant="secondary" className="text-[10px] md:text-xs">{app.number_type}</Badge>
                     </div>
 
-                    {app.number_type === 'DCP' && (
+                    {app.number_type === 'DCP' && isDcpAutoFillEnabled && (
                       <Button
                         type="button"
                         size="sm"
@@ -463,7 +467,7 @@ export function ApplicationList() {
                           <Badge variant="secondary" className="text-xs md:text-sm">{app.number_type}</Badge>
                         </td>
                         <td className="p-4 text-xs md:text-sm whitespace-nowrap">
-                          {app.number_type === 'DCP' ? (
+                          {app.number_type === 'DCP' && isDcpAutoFillEnabled ? (
                             <Button
                               type="button"
                               size="sm"
