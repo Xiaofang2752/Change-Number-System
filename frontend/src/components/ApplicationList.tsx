@@ -377,11 +377,6 @@ export function ApplicationList() {
                         <span>🕒</span>
                         <span>{formatBeijingTime(app.created_at)}</span>
                       </span>
-                      {isAdmin && (
-                        <span className="bg-muted px-2 py-0.5 rounded text-[10px] font-mono">
-                          {app.ip_address || '-'}
-                        </span>
-                      )}
                     </div>
 
                     {isAdmin && (
@@ -419,9 +414,8 @@ export function ApplicationList() {
                     <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">申请人</th>
                     <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">项目代号</th>
                     <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">编号类型</th>
-                    <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">申请时间</th>
                         <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">操作</th>
-                        {isAdmin && <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap hidden sm:table-cell">IP 地址</th>}
+                        <th className="h-12 px-4 text-left font-medium text-xs md:text-sm whitespace-nowrap">申请时间</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -468,9 +462,6 @@ export function ApplicationList() {
                         <td className="p-4 text-xs md:text-sm whitespace-nowrap">
                           <Badge variant="secondary" className="text-xs md:text-sm">{app.number_type}</Badge>
                         </td>
-                        <td className="p-4 text-xs md:text-sm text-muted-foreground whitespace-nowrap">
-                          {formatBeijingTime(app.created_at)}
-                        </td>
                         <td className="p-4 text-xs md:text-sm whitespace-nowrap">
                           {app.number_type === 'DCP' ? (
                             <Button
@@ -485,7 +476,9 @@ export function ApplicationList() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </td>
-                        {isAdmin && <td className="p-4 text-xs md:text-sm text-muted-foreground whitespace-nowrap hidden sm:table-cell">{app.ip_address || '-'}</td>}
+                        <td className="p-4 text-xs md:text-sm text-muted-foreground whitespace-nowrap">
+                          {formatBeijingTime(app.created_at)}
+                        </td>
                       </tr>
                     );
                   })}
