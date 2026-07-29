@@ -411,7 +411,7 @@ export function Home() {
         </Card>
 
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2 hidden">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-xl font-semibold text-slate-900 mb-3">CR/CN钉钉流程讲解</h2>
             <video
