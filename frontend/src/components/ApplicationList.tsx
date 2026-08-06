@@ -13,7 +13,10 @@ const TECH_NUMBER_TYPES = ['QTD', 'DHF', 'SOP', 'SOFT', 'BOM', 'DRW', 'HISTORICA
 
 // DCP 自动填充模板下载功能：2026-08-07 当天起前台开放，此前隐藏该入口
 const DCP_AUTO_FILL_ENABLED_FROM = '2026-08-07';
-const isDcpAutoFillEnabled = new Date() >= new Date(`${DCP_AUTO_FILL_ENABLED_FROM}T00:00:00`);
+// 临时预览开关：测试期强制开放功能（正式上线前应置为 false，由上方日期控制）
+const DCP_AUTO_FILL_FORCE_ENABLED = true;
+const isDcpAutoFillEnabled =
+  DCP_AUTO_FILL_FORCE_ENABLED || new Date() >= new Date(`${DCP_AUTO_FILL_ENABLED_FROM}T00:00:00`);
 
 interface StatsData {
   total: number;
