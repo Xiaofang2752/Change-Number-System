@@ -31,3 +31,18 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
 }
+
+/* 系统更新滚动提醒（跑马灯） */
+@keyframes announce-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.announce-marquee {
+  animation: announce-marquee 24s linear infinite;
+  will-change: transform;
+}
+
+.announce-marquee:hover {
+  animation-play-state: paused;
+}
