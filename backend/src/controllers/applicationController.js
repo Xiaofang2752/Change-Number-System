@@ -401,12 +401,11 @@ function getApplications(req, res) {
       orderDirection = upperOrder;
     }
 
-    let query = `SELECT a.*, (
-      SELECT t.id FROM dcp_templates t
-      WHERE DATE(t.published_at) <= DATE(a.created_at)
-      ORDER BY t.published_at DESC
-      LIMIT 1
-    ) AS dcp_template_id FROM applications a`;
+    let query = `SELECT a.*,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'DCP' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS dcp_template_id,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'IMPACT' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS impact_template_id,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'RISK' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS risk_template_id
+      FROM applications a`;
     const whereClauses = [];
     const params = [];
 

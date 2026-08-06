@@ -359,15 +359,39 @@ export function ApplicationList() {
                       <Badge variant="secondary" className="text-[10px] md:text-xs">{app.number_type}</Badge>
                     </div>
 
-                    {app.number_type === 'DCP' && isDcpAutoFillEnabled && app.dcp_template_id && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="w-full bg-green-600 hover:bg-green-700 text-white"
-                        onClick={() => dcpAPI.download(app.id)}
-                      >
-                        📄 下载 DCP《设计变更方案》
-                      </Button>
+                    {app.number_type === 'DCP' && isDcpAutoFillEnabled && (app.dcp_template_id || app.impact_template_id || app.risk_template_id) && (
+                      <div className="flex flex-col gap-2">
+                        {app.dcp_template_id && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="w-full bg-green-600 hover:bg-green-700 text-white"
+                            onClick={() => dcpAPI.downloadDoc('DCP', app.id)}
+                          >
+                            📄 下载 DCP《设计变更方案》
+                          </Button>
+                        )}
+                        {app.impact_template_id && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => dcpAPI.downloadDoc('IMPACT', app.id)}
+                          >
+                            📄 下载《变更影响评估表》
+                          </Button>
+                        )}
+                        {app.risk_template_id && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={() => dcpAPI.downloadDoc('RISK', app.id)}
+                          >
+                            📄 下载《风险登记册》
+                          </Button>
+                        )}
+                      </div>
                     )}
 
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground pt-1 border-t border-dashed border-border/80">
@@ -470,15 +494,39 @@ export function ApplicationList() {
                           <Badge variant="secondary" className="text-xs md:text-sm">{app.number_type}</Badge>
                         </td>
                         <td className="p-4 text-xs md:text-sm whitespace-nowrap">
-                          {app.number_type === 'DCP' && isDcpAutoFillEnabled && app.dcp_template_id ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700 text-white whitespace-nowrap"
-                              onClick={() => dcpAPI.download(app.id)}
-                            >
-                              📄 下载
-                            </Button>
+                          {app.number_type === 'DCP' && isDcpAutoFillEnabled && (app.dcp_template_id || app.impact_template_id || app.risk_template_id) ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {app.dcp_template_id && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700 text-white whitespace-nowrap"
+                                  onClick={() => dcpAPI.downloadDoc('DCP', app.id)}
+                                >
+                                  DCP
+                                </Button>
+                              )}
+                              {app.impact_template_id && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
+                                  onClick={() => dcpAPI.downloadDoc('IMPACT', app.id)}
+                                >
+                                  影响评估
+                                </Button>
+                              )}
+                              {app.risk_template_id && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap"
+                                  onClick={() => dcpAPI.downloadDoc('RISK', app.id)}
+                                >
+                                  风险登记
+                                </Button>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}

@@ -355,10 +355,11 @@ db.exec(`
   );
 `);
 
-// 创建 DCP《设计变更方案》模板表（单例，id 固定为 1，存储管理员上传的 .docx 模板）
+// 文档模板表（版本化，支持多种类型：DCP《设计变更方案》/ IMPACT《变更影响评估表》/ RISK《风险登记册》）
 db.exec(`
-  CREATE TABLE IF NOT EXISTS dcp_templates (
+  CREATE TABLE IF NOT EXISTS doc_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_type TEXT NOT NULL CHECK (template_type IN ('DCP', 'IMPACT', 'RISK')),
     filename TEXT,
     content BLOB,
     published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -366,22 +367,16 @@ db.exec(`
   );
 `);
 
-// DCP 模板版本化迁移：旧表 dcp_template 为单例(id=1)，改为多版本 dcp_templates
-function migrateDcpTemplate() {
+// 文档模板表迁移：旧 dcp_templates / 单例 dcp_template 统一迁移到 doc_templates(type=DCP)
+function migrateDocTemplates() {
   try {
-    const oldTable = db.prepare(`
-      SELECT sql FROM sqlite_master WHERE type='table' AND name='dcp_template'
-    `).get();
-    const newTable = db.prepare(`
-      SELECT sql FROM sqlite_master WHERE type='table' AND name='dcp_templates'
-    `).get();
-    if (!oldTable) return; // 旧表都不存在，等待 CREATE TABLE 处理
-    if (newTable) return; // 新表已存在，无需迁移
+    const newTable = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='doc_templates'`).get();
+    if (newTable) return; // 已是新表，无需迁移
 
-    // 创建新版本表
     db.exec(`
-      CREATE TABLE dcp_templates (
+      CREATE TABLE doc_templates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_type TEXT NOT NULL CHECK (template_type IN ('DCP', 'IMPACT', 'RISK')),
         filename TEXT,
         content BLOB,
         published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -389,23 +384,37 @@ function migrateDcpTemplate() {
       )
     `);
 
-    // 迁移旧单例行作为版本 1（发布时间取原 updated_at）
-    const row = db.prepare('SELECT filename, content, updated_at FROM dcp_template WHERE id = 1').get();
-    if (row && row.content) {
-      db.prepare(`
-        INSERT INTO dcp_templates (filename, content, published_at)
-        VALUES (?, ?, COALESCE(?, CURRENT_TIMESTAMP))
-      `).run(row.filename, row.content, row.updated_at);
+    // 旧多版本表 dcp_templates
+    const oldMulti = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='dcp_templates'`).get();
+    if (oldMulti) {
+      db.prepare(
+        `INSERT INTO doc_templates (filename, content, published_at, created_by, template_type)
+         SELECT filename, content, published_at, created_by, 'DCP' FROM dcp_templates`
+      ).run();
+      db.exec('DROP TABLE dcp_templates');
+      console.log('migrateDocTemplates: dcp_templates 已迁移为 doc_templates (type=DCP)');
+      return;
     }
 
-    db.exec('DROP TABLE dcp_template');
-    console.log('migrateDcpTemplate: 旧单例模板已迁移为版本化 dcp_templates');
+    // 更旧的单例表 dcp_template（id=1）
+    const oldSingle = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='dcp_template'`).get();
+    if (oldSingle) {
+      const row = db.prepare('SELECT filename, content, updated_at FROM dcp_template WHERE id = 1').get();
+      if (row && row.content) {
+        db.prepare(
+          `INSERT INTO doc_templates (filename, content, published_at, template_type)
+           VALUES (?, ?, COALESCE(?, CURRENT_TIMESTAMP), 'DCP')`
+        ).run(row.filename, row.content, row.updated_at);
+      }
+      db.exec('DROP TABLE dcp_template');
+      console.log('migrateDocTemplates: 旧单例 dcp_template 已迁移为 doc_templates (type=DCP)');
+    }
   } catch (err) {
-    console.error('migrateDcpTemplate error:', err.message);
+    console.error('migrateDocTemplates error:', err.message);
   }
 }
 
-migrateDcpTemplate();
+migrateDocTemplates();
 
 // 迁移: 首次启动时把现有 10 条硬编码内容作为初始 published 版插入
 function migrateGuideQna() {

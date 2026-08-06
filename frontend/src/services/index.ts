@@ -51,6 +51,8 @@ export interface Application {
   ip_address?: string;
   created_at: string;
   dcp_template_id?: number | null; // 申请时间当日或之前发布的 DCP 模板版本 id（用于判断是否可下载）
+  impact_template_id?: number | null; // 《变更影响评估表》对应模板版本 id
+  risk_template_id?: number | null; // 《风险登记册》对应模板版本 id
 }
 
 
@@ -131,9 +133,9 @@ export const applicationAPI = {
 };
 
 export const dcpAPI = {
-  getTemplateMeta: () => api.get('/dcp/template'),
-  uploadTemplate: (formData: FormData) =>
-    api.post('/dcp/template', formData, {
+  getTemplateMeta: (type: 'DCP' | 'IMPACT' | 'RISK') => api.get(`/doc-template?type=${type}`),
+  uploadTemplate: (type: 'DCP' | 'IMPACT' | 'RISK', formData: FormData) =>
+    api.post(`/doc-template?type=${type}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
         Authorization: localStorage.getItem('adminToken') ? `Bearer ${localStorage.getItem('adminToken')}` : '',
@@ -143,6 +145,15 @@ export const dcpAPI = {
   download: (id: number) => {
     const a = document.createElement('a');
     a.href = `/api/dcp/${id}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+  // 按类型下载已填充文档（type: DCP / IMPACT / RISK），版本按申请时间对应
+  downloadDoc: (type: 'DCP' | 'IMPACT' | 'RISK', id: number) => {
+    const a = document.createElement('a');
+    a.href = `/api/doc/${type}/${id}`;
     a.style.display = 'none';
     document.body.appendChild(a);
     a.click();

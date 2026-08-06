@@ -3,6 +3,8 @@ import { dcpAPI } from '../services';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 
+type DocTemplateType = 'DCP' | 'IMPACT' | 'RISK';
+
 interface DcpTemplateVersion {
   id: number;
   filename?: string;
@@ -11,6 +13,7 @@ interface DcpTemplateVersion {
 }
 
 interface DcpTemplateMeta {
+  type?: DocTemplateType;
   exists: boolean;
   filename?: string;
   updated_at?: string;
@@ -18,18 +21,26 @@ interface DcpTemplateMeta {
   versions?: DcpTemplateVersion[];
 }
 
+const TEMPLATE_TYPES: { type: DocTemplateType; label: string; hint: string }[] = [
+  { type: 'DCP', label: 'DCP《设计变更方案》', hint: '{dcp_no} / {project_code} / {applicant_name} / {date}' },
+  { type: 'IMPACT', label: '《变更影响评估表》', hint: '{dcp_no} 等占位符，其余由工程师填写' },
+  { type: 'RISK', label: '《风险登记册》', hint: '{dcp_no} 等占位符，其余由工程师填写' },
+];
+
 /**
- * DCP《设计变更方案》模板维护组件。
- * 供管理员在"变更管理"页的对应页签下导入/维护 Word(.docx) 模板（版本化）。
+ * DCP 相关表单模板维护组件（版本化）。
+ * 供管理员在"变更管理"页的对应页签下导入/维护 Word(.docx) 模板。
+ * 支持 DCP《设计变更方案》、《变更影响评估表》、《风险登记册》三类。
  */
 export function DcpTemplateManager() {
+  const [activeType, setActiveType] = useState<DocTemplateType>('DCP');
   const [meta, setMeta] = useState<DcpTemplateMeta | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const loadMeta = () => {
-    dcpAPI.getTemplateMeta()
+    dcpAPI.getTemplateMeta(activeType)
       .then((res) => {
         setMeta((res as unknown as { data: DcpTemplateMeta }).data);
       })
@@ -40,7 +51,8 @@ export function DcpTemplateManager() {
 
   useEffect(() => {
     loadMeta();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeType]);
 
   useEffect(() => {
     if (!notification) return;
@@ -60,17 +72,19 @@ export function DcpTemplateManager() {
       setUploading(true);
       const formData = new FormData();
       formData.append('file', file);
-      await dcpAPI.uploadTemplate(formData);
+      await dcpAPI.uploadTemplate(activeType, formData);
       await loadMeta();
       setFile(null);
-      setNotification({ message: 'DCP 模板已上传（已新增版本）', type: 'success' });
+      setNotification({ message: `${TEMPLATE_TYPES.find(t => t.type === activeType)?.label} 模板已上传（已新增版本）`, type: 'success' });
     } catch (err: unknown) {
-      console.error('上传 DCP 模板失败:', err);
+      console.error('上传模板失败:', err);
       setNotification({ message: (err as { message?: string }).message || '上传失败，请重试', type: 'error' });
     } finally {
       setUploading(false);
     }
   };
+
+  const activeMeta = TEMPLATE_TYPES.find(t => t.type === activeType);
 
   return (
     <div className="space-y-6">
@@ -86,11 +100,28 @@ export function DcpTemplateManager() {
       )}
 
       <Card>
-        
         <CardContent>
           <div className="space-y-4">
+            {/* 模板类型切换 */}
+            <div className="flex flex-wrap gap-2">
+              {TEMPLATE_TYPES.map((t) => (
+                <button
+                  key={t.type}
+                  type="button"
+                  onClick={() => { setActiveType(t.type); setFile(null); }}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                    activeType === t.type
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-primary'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
             <div className="p-4 bg-gray-50 rounded-lg">
-              <div className="font-medium mb-1">当前模板状态</div>
+              <div className="font-medium mb-1">当前模板状态（{activeMeta?.label}）</div>
               <div className="text-sm text-muted-foreground">
                 {meta?.exists ? (
                   <span>
@@ -98,7 +129,7 @@ export function DcpTemplateManager() {
                     {meta.updated_at && <span> （更新于 {meta.updated_at}）</span>}
                   </span>
                 ) : (
-                  <span className="text-orange-600">尚未上传模板，用户在提交 DCP 编号申请后将无法下载《设计变更方案》。</span>
+                  <span className="text-orange-600">尚未上传模板，工程师在提交对应 DCP 编号申请后将无法下载该表单。</span>
                 )}
               </div>
             </div>
@@ -124,7 +155,7 @@ export function DcpTemplateManager() {
             </div>
 
             <div className="text-xs text-muted-foreground leading-relaxed">
-              上传的 Word(.docx) 模板将用于自动生成 DCP《设计变更方案》。请在模板中使用以下占位符（大括号为英文半角），系统会自动替换为申请内容：
+              上传的 Word(.docx) 模板将用于自动生成对应表单。请在模板中使用以下占位符（大括号为英文半角），系统会自动替换为申请内容：
               <div className="mt-2 space-y-1">
                 <div><code className="bg-gray-100 px-1 rounded">{'{dcp_no}'}</code> — DCP 编号（自动填充申请后的编号）</div>
                 <div><code className="bg-gray-100 px-1 rounded">{'{project_code}'}</code> — 项目代号</div>
@@ -132,7 +163,7 @@ export function DcpTemplateManager() {
                 <div><code className="bg-gray-100 px-1 rounded">{'{date}'}</code> — 申请日期（YYYY-MM-DD）</div>
               </div>
               <div className="mt-2 text-orange-600">
-                每次上传都会新增一个模板版本。工程师下载时，系统按其 DCP 编号的「申请日期」对应到当日或之前发布的最新模板版本。
+                每次上传都会新增一个模板版本。工程师下载时，系统按其 DCP 编号的「申请日期」对应到当日或之前发布的该类型最新模板版本。
               </div>
             </div>
 
