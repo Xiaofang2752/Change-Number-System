@@ -194,7 +194,7 @@ async function downloadDoc(req, res) {
       'Content-Disposition',
       `attachment; filename="doc.${rendered.ext}"; filename*=UTF-8''${encodedName}`
     );
-    return res.status(200).send(buf);
+    return res.status(200).send(rendered.buf);
   } catch (err) {
     console.error('Download docx error:', err);
     return errorResponse(res, 500, '生成文档失败');
