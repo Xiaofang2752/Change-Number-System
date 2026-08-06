@@ -25,7 +25,7 @@ const FORM_TYPES: { type: DocTemplateType; defaultLabel: string }[] = [
  * 工程师点开后可下载最新空白表单模板（不填编号，占位符保留）。
  */
 export function FormTemplateDownload() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [list, setList] = useState<TplInfo[]>(
     FORM_TYPES.map((f) => ({ ...f, exists: false }))
   );
@@ -63,12 +63,12 @@ export function FormTemplateDownload() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3.5 py-3 text-left hover:bg-slate-50 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors"
       >
         <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
-        <span className="text-sm font-bold text-slate-800 flex-1">表单模板下载</span>
+        <span className="text-[13px] font-bold text-slate-800 flex-1">表单模板下载</span>
         {/* 闪亮标识 */}
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black text-white bg-gradient-to-r from-amber-400 to-orange-500 shadow-[0_0_10px_rgba(251,146,60,0.65)] animate-pulse">
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-black text-white bg-gradient-to-r from-amber-400 to-orange-500 shadow-[0_0_10px_rgba(251,146,60,0.65)] animate-pulse">
           {readyCount > 0 ? `${readyCount} 个可下` : 'NEW'}
         </span>
         <ChevronDown
@@ -78,12 +78,12 @@ export function FormTemplateDownload() {
 
       {/* 折叠内容 */}
       {open && (
-        <div className="px-3 pb-3 pt-1 border-t border-slate-100">
-          <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
+        <div className="px-2.5 pb-2.5 pt-0.5 border-t border-slate-100">
+          <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed pt-2">
             点击下载最新空白模板（含占位符，请手动填写）。后台维护，版本随发布更新。
           </p>
           {loading ? (
-            <div className="text-center py-4 text-xs text-slate-400">加载中...</div>
+            <div className="text-center py-3 text-[11px] text-slate-400">加载中...</div>
           ) : (
             <div className="space-y-1.5">
               {list.map((item) => {
@@ -92,24 +92,33 @@ export function FormTemplateDownload() {
                 return (
                   <div
                     key={item.type}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 hover:border-primary/50 transition"
+                    className={`rounded-lg border px-2 py-1.5 ${
+                      item.exists ? 'border-slate-200' : 'border-slate-100 bg-slate-50'
+                    }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-start gap-1.5">
                       {isXlsx ? (
-                        <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
                       ) : (
-                        <FileText className="h-4 w-4 text-sky-600 shrink-0" />
+                        <FileText className="h-3.5 w-3.5 text-sky-600 shrink-0 mt-0.5" />
                       )}
-                      <span className="text-xs font-medium text-slate-700 truncate" title={name}>{name}</span>
+                      <span
+                        className={`text-[11px] leading-snug flex-1 ${
+                          item.exists ? 'text-slate-700' : 'text-slate-400'
+                        }`}
+                        title={name}
+                      >
+                        {name}
+                      </span>
                     </div>
                     <button
                       type="button"
                       disabled={!item.exists}
                       onClick={() => dcpAPI.downloadTemplateFile(item.type)}
-                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition ${
+                      className={`mt-1.5 w-full inline-flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition ${
                         item.exists
                           ? 'bg-green-600 hover:bg-green-700 text-white'
-                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
                     >
                       <Download className="h-3 w-3" />
