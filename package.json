@@ -1,6 +1,6 @@
 {
   "name": "change-number-system",
-  "version": "1.6.13",
+  "version": "1.7.0",
   "description": "React-based auto number system with SQLite backend",
   "scripts": {
     "dev:frontend": "cd frontend && npm run dev",
