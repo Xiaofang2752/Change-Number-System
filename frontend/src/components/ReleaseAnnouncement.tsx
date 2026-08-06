@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Megaphone, FileDown, RefreshCw } from 'lucide-react';
 
 // 系统发布版本标识：每次发布新功能后修改此值，即可让所有工程师再次看到更新提示
-const RELEASE_KEY = 'release-2026-08-06';
+const RELEASE_KEY = 'release-2026-08-06-marquee';
 
 export function ReleaseAnnouncement() {
   const [visible, setVisible] = useState(false);
