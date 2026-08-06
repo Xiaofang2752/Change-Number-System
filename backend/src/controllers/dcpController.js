@@ -2,7 +2,6 @@ const { getDatabase } = require('../db/connection');
 const { successResponse, errorResponse } = require('../middlewares/response');
 const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
-const ExcelJS = require('exceljs');
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -25,40 +24,36 @@ function fillDocx(content, data) {
   return doc.getZip().generate({ type: 'nodebuffer', mimeType: DOCX_MIME });
 }
 
-// 填充 Excel(.xlsx) 模板：遍历所有单元格，替换 {dcp_no}/{project_code}/{applicant_name}/{date}
-async function fillXlsx(content, data) {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(content);
+// 填充 Excel(.xlsx) 模板：直接在各 XML 部件中替换占位符，避免 exceljs 全量解析/重写（慢）
+// xlsx 本质是 zip，占位符以纯文本存在于 sheet 或 sharedStrings 的 XML 中，全局替换即可，且完整保留格式/图片
+function escapeXml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fillXlsx(content, data) {
+  const zip = new PizZip(content);
   const replacements = [
-    ['{dcp_no}', data.dcp_no],
-    ['{project_code}', data.project_code],
-    ['{applicant_name}', data.applicant_name],
-    ['{date}', data.date],
+    ['{dcp_no}', escapeXml(data.dcp_no)],
+    ['{project_code}', escapeXml(data.project_code)],
+    ['{applicant_name}', escapeXml(data.applicant_name)],
+    ['{date}', escapeXml(data.date)],
   ];
-  const apply = (text) => {
-    let v = text;
+  Object.keys(zip.files).forEach((relativePath) => {
+    const entry = zip.files[relativePath];
+    if (entry.dir || !relativePath.endsWith('.xml')) return;
+    let str = entry.asText();
+    let changed = false;
     for (const [k, val] of replacements) {
-      if (v.indexOf(k) !== -1) v = v.split(k).join(val);
+      if (str.indexOf(k) !== -1) {
+        str = str.split(k).join(val);
+        changed = true;
+      }
     }
-    return v;
-  };
-  wb.eachSheet((sheet) => {
-    sheet.eachRow((row) => {
-      row.eachCell((cell) => {
-        if (typeof cell.value === 'string' && cell.value.indexOf('{') !== -1) {
-          cell.value = apply(cell.value);
-        } else if (cell.value && Array.isArray(cell.value.richText)) {
-          cell.value.richText.forEach((rt) => {
-            if (typeof rt.text === 'string' && rt.text.indexOf('{') !== -1) {
-              rt.text = apply(rt.text);
-            }
-          });
-        }
-      });
-    });
+    if (changed) {
+      zip.file(relativePath, str);
+    }
   });
-  const out = await wb.xlsx.writeBuffer();
-  return Buffer.from(out);
+  return zip.generate({ type: 'nodebuffer', mimeType: XLSX_MIME });
 }
 
 // 按模板文件类型渲染（docx 填充 / xlsx 填充），返回 { buf, ext, mimeType }
