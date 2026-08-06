@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { formatBeijingTime } from '@/utils/timezone';
 import { useTour } from '../hooks/useTour';
 import { HOME_STEPS } from '../tour/steps';
+import { ReleaseAnnouncement } from '../components/ReleaseAnnouncement';
 
 const typeColors: { [key: string]: string } = {
   DCP: 'bg-amber-500',
@@ -164,6 +165,7 @@ export function Home() {
   return (
     <Layout>
       <div className="max-w-6xl mx-auto p-6 space-y-8">
+        <ReleaseAnnouncement />
         <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-lg">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div data-tour="home-system-title">
