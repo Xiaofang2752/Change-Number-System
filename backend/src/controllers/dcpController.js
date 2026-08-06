@@ -2,8 +2,76 @@ const { getDatabase } = require('../db/connection');
 const { successResponse, errorResponse } = require('../middlewares/response');
 const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
+const ExcelJS = require('exceljs');
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+// 占位符 → 实际值映射（Word / Excel 共用）
+function buildPlaceholderData(app) {
+  return {
+    dcp_no: app.full_number,
+    project_code: app.project_code || '',
+    applicant_name: app.applicant_name || '',
+    date: (app.created_at || '').split(' ')[0] || '',
+  };
+}
+
+// 填充 Word(.docx) 模板
+function fillDocx(content, data) {
+  const zip = new PizZip(content);
+  const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+  doc.render(data);
+  return doc.getZip().generate({ type: 'nodebuffer', mimeType: DOCX_MIME });
+}
+
+// 填充 Excel(.xlsx) 模板：遍历所有单元格，替换 {dcp_no}/{project_code}/{applicant_name}/{date}
+async function fillXlsx(content, data) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(content);
+  const replacements = [
+    ['{dcp_no}', data.dcp_no],
+    ['{project_code}', data.project_code],
+    ['{applicant_name}', data.applicant_name],
+    ['{date}', data.date],
+  ];
+  const apply = (text) => {
+    let v = text;
+    for (const [k, val] of replacements) {
+      if (v.indexOf(k) !== -1) v = v.split(k).join(val);
+    }
+    return v;
+  };
+  wb.eachSheet((sheet) => {
+    sheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        if (typeof cell.value === 'string' && cell.value.indexOf('{') !== -1) {
+          cell.value = apply(cell.value);
+        } else if (cell.value && Array.isArray(cell.value.richText)) {
+          cell.value.richText.forEach((rt) => {
+            if (typeof rt.text === 'string' && rt.text.indexOf('{') !== -1) {
+              rt.text = apply(rt.text);
+            }
+          });
+        }
+      });
+    });
+  });
+  const out = await wb.xlsx.writeBuffer();
+  return Buffer.from(out);
+}
+
+// 按模板文件类型渲染（docx 填充 / xlsx 填充），返回 { buf, ext, mimeType }
+async function renderTemplate(tpl, data) {
+  const lower = (tpl.filename || '').toLowerCase();
+  if (lower.endsWith('.xlsx')) {
+    const buf = await fillXlsx(tpl.content, data);
+    return { buf, ext: 'xlsx', mimeType: XLSX_MIME };
+  }
+  // 默认按 docx 处理
+  const buf = fillDocx(tpl.content, data);
+  return { buf, ext: 'docx', mimeType: DOCX_MIME };
+}
 
 // 支持的文档模板类型
 const DOC_TEMPLATE_TYPES = {
@@ -80,11 +148,11 @@ function getDocTemplateMeta(req, res) {
 }
 
 /**
- * 按申请 id 生成并下载已填充的某类文档 .docx
+ * 按申请 id 生成并下载已填充的某类文档
  * 使用"申请时间当日或之前发布"的该类型最新模板版本（版本随申请时间对应模板迭代）。
  * 若申请时间早于该类型任何模板发布时间，则不支持下载。
  */
-function downloadDoc(req, res) {
+async function downloadDoc(req, res) {
   try {
     const type = normalizeType(req.params.type);
     if (!type) {
@@ -109,42 +177,22 @@ function downloadDoc(req, res) {
       return errorResponse(res, 400, `该编号申请时间早于${DOC_TEMPLATE_TYPES[type]}模板发布时间，暂不支持下载`);
     }
 
-    const data = {
-      dcp_no: app.full_number,
-      project_code: app.project_code || '',
-      applicant_name: app.applicant_name || '',
-      date: (app.created_at || '').split(' ')[0] || '',
-    };
+    const data = buildPlaceholderData(app);
 
-    const lowerName = (tpl.filename || '').toLowerCase();
-    const isXlsx = lowerName.endsWith('.xlsx');
-    const ext = isXlsx ? 'xlsx' : 'docx';
-    const mimeType = isXlsx
-      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      : DOCX_MIME;
-
-    let buf;
-    if (isXlsx) {
-      // Excel 模板：直接原样下发（暂不做占位符填充）
-      buf = Buffer.from(tpl.content);
-    } else {
-      try {
-        const zip = new PizZip(tpl.content);
-        const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
-        doc.render(data);
-        buf = doc.getZip().generate({ type: 'nodebuffer', mimeType: DOCX_MIME });
-      } catch (renderErr) {
-        console.error('Render docx error:', renderErr);
-        return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
-      }
+    let rendered;
+    try {
+      rendered = await renderTemplate(tpl, data);
+    } catch (renderErr) {
+      console.error('Render template error:', renderErr);
+      return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
     }
 
     const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
-    const encodedName = encodeURIComponent(`${baseName}-${app.full_number}.${ext}`);
-    res.setHeader('Content-Type', mimeType);
+    const encodedName = encodeURIComponent(`${baseName}-${app.full_number}.${rendered.ext}`);
+    res.setHeader('Content-Type', rendered.mimeType);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="doc.${ext}"; filename*=UTF-8''${encodedName}`
+      `attachment; filename="doc.${rendered.ext}"; filename*=UTF-8''${encodedName}`
     );
     return res.status(200).send(buf);
   } catch (err) {
@@ -163,7 +211,7 @@ function downloadDcp(req, res) {
  * 一键打包下载：将该 DCP 申请当前可用的三类表单（DCP《设计变更方案》/《变更影响评估表》/《风险登记册》）
  * 按各自"申请时间对应版本"打包为 ZIP，压缩包内以 DCP 编号命名的文件夹包含各文件。
  */
-function downloadBundle(req, res) {
+async function downloadBundle(req, res) {
   try {
     const { id } = req.params;
     const db = getDatabase();
@@ -177,6 +225,7 @@ function downloadBundle(req, res) {
 
     const zip = new PizZip();
     let added = 0;
+    const data = buildPlaceholderData(app);
     for (const type of VALID_TYPES) {
       const tpl = db.prepare(
         `SELECT id, content, filename, published_at
@@ -187,11 +236,16 @@ function downloadBundle(req, res) {
       ).get(type, app.created_at);
       if (!tpl || !tpl.content) continue;
 
-      const lower = (tpl.filename || '').toLowerCase();
-      const ext = lower.endsWith('.xlsx') ? 'xlsx' : 'docx';
+      let rendered;
+      try {
+        rendered = await renderTemplate(tpl, data);
+      } catch (renderErr) {
+        console.error('Render template in bundle error:', renderErr);
+        return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
+      }
       const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
-      const fileName = `${baseName}-${app.full_number}.${ext}`;
-      zip.file(`${app.full_number}/${fileName}`, Buffer.from(tpl.content));
+      const fileName = `${baseName}-${app.full_number}.${rendered.ext}`;
+      zip.file(`${app.full_number}/${fileName}`, rendered.buf);
       added++;
     }
 

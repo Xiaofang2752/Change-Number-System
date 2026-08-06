@@ -155,7 +155,7 @@ export function DcpTemplateManager() {
             </div>
 
             <div className="text-xs text-muted-foreground leading-relaxed">
-              上传的 Word(.docx) 或 Excel(.xlsx) 模板将用于生成对应表单。Word 模板请使用以下占位符（大括号为英文半角），系统会自动替换为申请内容；Excel 模板暂按原样下发：
+              上传的 Word(.docx) 或 Excel(.xlsx) 模板将用于生成对应表单。两类模板均支持以下占位符（大括号为英文半角），系统会自动替换为申请内容：
               <div className="mt-2 space-y-1">
                 <div><code className="bg-gray-100 px-1 rounded">{'{dcp_no}'}</code> — DCP 编号（自动填充申请后的编号）</div>
                 <div><code className="bg-gray-100 px-1 rounded">{'{project_code}'}</code> — 项目代号</div>
