@@ -50,6 +50,7 @@ export interface Application {
   source_number?: string;
   ip_address?: string;
   created_at: string;
+  dcp_template_id?: number | null; // 申请时间当日或之前发布的 DCP 模板版本 id（用于判断是否可下载）
 }
 
 

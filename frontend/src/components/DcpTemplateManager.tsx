@@ -3,15 +3,24 @@ import { dcpAPI } from '../services';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 
+interface DcpTemplateVersion {
+  id: number;
+  filename?: string;
+  published_at?: string;
+  created_by?: string | null;
+}
+
 interface DcpTemplateMeta {
   exists: boolean;
   filename?: string;
   updated_at?: string;
+  latest_id?: number | null;
+  versions?: DcpTemplateVersion[];
 }
 
 /**
  * DCP《设计变更方案》模板维护组件。
- * 供管理员在"变更管理"页的对应页签下导入/维护 Word(.docx) 模板。
+ * 供管理员在"变更管理"页的对应页签下导入/维护 Word(.docx) 模板（版本化）。
  */
 export function DcpTemplateManager() {
   const [meta, setMeta] = useState<DcpTemplateMeta | null>(null);
@@ -19,7 +28,7 @@ export function DcpTemplateManager() {
   const [uploading, setUploading] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  useEffect(() => {
+  const loadMeta = () => {
     dcpAPI.getTemplateMeta()
       .then((res) => {
         setMeta((res as unknown as { data: DcpTemplateMeta }).data);
@@ -27,6 +36,10 @@ export function DcpTemplateManager() {
       .catch(() => {
         // 获取失败不影响页面渲染（多为未登录/网络问题，由拦截器统一处理）
       });
+  };
+
+  useEffect(() => {
+    loadMeta();
   }, []);
 
   useEffect(() => {
@@ -47,11 +60,10 @@ export function DcpTemplateManager() {
       setUploading(true);
       const formData = new FormData();
       formData.append('file', file);
-      const res = await dcpAPI.uploadTemplate(formData);
-      const data = (res as unknown as { data: { filename: string; updated_at: string } }).data;
-      setMeta({ exists: true, filename: data.filename, updated_at: data.updated_at });
+      await dcpAPI.uploadTemplate(formData);
+      await loadMeta();
       setFile(null);
-      setNotification({ message: 'DCP 模板已更新', type: 'success' });
+      setNotification({ message: 'DCP 模板已上传（已新增版本）', type: 'success' });
     } catch (err: unknown) {
       console.error('上传 DCP 模板失败:', err);
       setNotification({ message: (err as { message?: string }).message || '上传失败，请重试', type: 'error' });
@@ -119,7 +131,38 @@ export function DcpTemplateManager() {
                 <div><code className="bg-gray-100 px-1 rounded">{'{applicant_name}'}</code> — 申请人</div>
                 <div><code className="bg-gray-100 px-1 rounded">{'{date}'}</code> — 申请日期（YYYY-MM-DD）</div>
               </div>
+              <div className="mt-2 text-orange-600">
+                每次上传都会新增一个模板版本。工程师下载时，系统按其 DCP 编号的「申请日期」对应到当日或之前发布的最新模板版本。
+              </div>
             </div>
+
+            {meta?.versions && meta.versions.length > 0 && (
+              <div className="mt-4">
+                <div className="font-medium mb-2 text-sm">模板版本历史（按发布时间倒序）</div>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="h-9 px-3 text-left font-medium whitespace-nowrap">版本 ID</th>
+                        <th className="h-9 px-3 text-left font-medium whitespace-nowrap">文件名</th>
+                        <th className="h-9 px-3 text-left font-medium whitespace-nowrap">发布时间</th>
+                        <th className="h-9 px-3 text-left font-medium whitespace-nowrap">上传人</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {meta.versions.map((v) => (
+                        <tr key={v.id} className="border-t">
+                          <td className="px-3 py-2 whitespace-nowrap font-mono">#{v.id}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{v.filename || '-'}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{v.published_at || '-'}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{v.created_by || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

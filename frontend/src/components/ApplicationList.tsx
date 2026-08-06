@@ -359,7 +359,7 @@ export function ApplicationList() {
                       <Badge variant="secondary" className="text-[10px] md:text-xs">{app.number_type}</Badge>
                     </div>
 
-                    {app.number_type === 'DCP' && isDcpAutoFillEnabled && (
+                    {app.number_type === 'DCP' && isDcpAutoFillEnabled && app.dcp_template_id && (
                       <Button
                         type="button"
                         size="sm"
@@ -470,7 +470,7 @@ export function ApplicationList() {
                           <Badge variant="secondary" className="text-xs md:text-sm">{app.number_type}</Badge>
                         </td>
                         <td className="p-4 text-xs md:text-sm whitespace-nowrap">
-                          {app.number_type === 'DCP' && isDcpAutoFillEnabled ? (
+                          {app.number_type === 'DCP' && isDcpAutoFillEnabled && app.dcp_template_id ? (
                             <Button
                               type="button"
                               size="sm"

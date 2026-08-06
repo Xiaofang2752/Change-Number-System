@@ -6,7 +6,7 @@ const Docxtemplater = require('docxtemplater');
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 /**
- * 管理员上传 DCP《设计变更方案》Word 模板（单例，覆盖式存储）
+ * 管理员上传 DCP《设计变更方案》Word 模板（版本化：每次上传新增一个版本）
  * multer 在路由层以 single('file') 注入 req.file
  */
 function uploadTemplate(req, res) {
@@ -19,13 +19,13 @@ function uploadTemplate(req, res) {
       return errorResponse(res, 400, '模板仅支持 .docx 格式的 Word 文档');
     }
     const db = getDatabase();
-    db.prepare(
-      `INSERT INTO dcp_template (id, filename, content, updated_at)
-       VALUES (1, ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(id) DO UPDATE SET filename = excluded.filename, content = excluded.content, updated_at = CURRENT_TIMESTAMP`
-    ).run(originalName, req.file.buffer);
+    const createdBy = req.admin?.username || req.admin?.id || null;
+    const info = db.prepare(
+      `INSERT INTO dcp_templates (filename, content, published_at, created_by)
+       VALUES (?, ?, CURRENT_TIMESTAMP, ?)`
+    ).run(originalName, req.file.buffer, createdBy);
 
-    return successResponse(res, { filename: originalName, size: req.file.size }, '模板上传成功');
+    return successResponse(res, { id: info.lastInsertRowid, filename: originalName, size: req.file.size }, '模板上传成功（已新增版本）');
   } catch (err) {
     console.error('Upload DCP template error:', err);
     return errorResponse(res, 500, '上传模板失败');
@@ -33,16 +33,19 @@ function uploadTemplate(req, res) {
 }
 
 /**
- * 获取当前模板元信息（不含二进制内容），供管理员页展示状态
+ * 获取模板元信息（不含二进制内容），供管理员页展示状态与版本历史
  */
 function getTemplateMeta(req, res) {
   try {
     const db = getDatabase();
-    const row = db.prepare('SELECT filename, updated_at FROM dcp_template WHERE id = 1').get();
+    const latest = db.prepare('SELECT id, filename, published_at FROM dcp_templates ORDER BY published_at DESC LIMIT 1').get();
+    const versions = db.prepare('SELECT id, filename, published_at, created_by FROM dcp_templates ORDER BY published_at DESC').all();
     return successResponse(res, {
-      exists: !!row,
-      filename: row?.filename || null,
-      updated_at: row?.updated_at || null,
+      exists: !!latest,
+      filename: latest?.filename || null,
+      updated_at: latest?.published_at || null,
+      latest_id: latest?.id || null,
+      versions,
     });
   } catch (err) {
     console.error('Get DCP template meta error:', err);
@@ -52,7 +55,9 @@ function getTemplateMeta(req, res) {
 
 /**
  * 按申请 id 生成并下载已填充的 DCP《设计变更方案》.docx
- * 仅支持 number_type = 'DCP' 的申请；DCP No. 自动填充为申请编号
+ * 仅支持 number_type = 'DCP' 的申请；
+ * 使用"申请时间当日或之前发布"的最新模板版本（版本随申请时间对应模板迭代）。
+ * 若申请时间早于任何模板发布时间，则不支持下载。
  */
 function downloadFilled(req, res) {
   try {
@@ -65,9 +70,16 @@ function downloadFilled(req, res) {
     if (app.number_type !== 'DCP') {
       return errorResponse(res, 400, '该记录不是 DCP 申请，无法生成《设计变更方案》');
     }
-    const tpl = db.prepare('SELECT content, filename FROM dcp_template WHERE id = 1').get();
+    // 取申请时间当日或之前发布的最新模板版本
+    const tpl = db.prepare(
+      `SELECT id, content, filename, published_at
+       FROM dcp_templates
+       WHERE DATE(published_at) <= DATE(?)
+       ORDER BY published_at DESC
+       LIMIT 1`
+    ).get(app.created_at);
     if (!tpl || !tpl.content) {
-      return errorResponse(res, 400, '尚未配置 DCP 模板，请联系管理员在后台上传');
+      return errorResponse(res, 400, '该编号申请时间早于 DCP 模板发布时间，暂不支持下载《设计变更方案》');
     }
 
     const data = {
@@ -84,7 +96,7 @@ function downloadFilled(req, res) {
       doc.render(data);
     } catch (renderErr) {
       console.error('Render DCP docx error:', renderErr);
-      return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（{{dcp_no}} 等）');
+      return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（{dcp_no} 等）');
     }
 
     const buf = doc.getZip().generate({
