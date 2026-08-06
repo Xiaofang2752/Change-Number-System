@@ -66,10 +66,10 @@ export function FormTemplateDownload() {
         className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors"
       >
         <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
-        <span className="text-[13px] font-bold text-slate-800 flex-1">表单模板下载</span>
+        <span className="text-[13px] font-bold text-slate-800 flex-1">表单模板</span>
         {/* 闪亮标识 */}
         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-black text-white bg-gradient-to-r from-amber-400 to-orange-500 shadow-[0_0_10px_rgba(251,146,60,0.65)] animate-pulse">
-          {readyCount > 0 ? `${readyCount} 个可下` : 'NEW'}
+          New
         </span>
         <ChevronDown
           className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
@@ -80,7 +80,7 @@ export function FormTemplateDownload() {
       {open && (
         <div className="px-2.5 pb-2.5 pt-0.5 border-t border-slate-100">
           <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed pt-2">
-            点击下载最新空白模板（含占位符，请手动填写）。后台维护，版本随发布更新。
+            点击下载最新空白模板（含占位符，请按实际内容填写）。后台维护，版本随发布更新。
           </p>
           {loading ? (
             <div className="text-center py-3 text-[11px] text-slate-400">加载中...</div>
