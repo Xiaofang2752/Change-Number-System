@@ -33,12 +33,12 @@ export function ReleaseAnnouncement() {
     <span className="inline-flex items-center gap-2 px-8 text-[13px] text-amber-900">
       <RefreshCw className="h-3.5 w-3.5 text-amber-500 shrink-0" />
       <span>
-        DCP、变更影响评估表等模板已更新，请及时更新 SVN 表单。
+        DCP、变更影响评估表等模板已于2026.08.07更新，请及时更新 SVN 表单。
       </span>
       <span className="text-amber-400">·</span>
       <FileDown className="h-3.5 w-3.5 text-amber-500 shrink-0" />
       <span>
-        为方便工程师，小编已新增「下载表单」功能：取号后自动获取最新 DCP 模板（含《变更影响评估表》《风险登记册》），无需再手动拷贝。
+        为方便工程师，网页已新增「下载表单」功能：取号后自动获取最新 DCP 模板（含《变更影响评估表》《风险登记册》），无需再手动拷贝。
       </span>
     </span>
   );
@@ -48,7 +48,7 @@ export function ReleaseAnnouncement() {
       {/* 左侧固定标签 */}
       <div className="shrink-0 z-10 flex items-center gap-1.5 pl-3 pr-3 h-full bg-amber-200/80 text-amber-900 font-bold text-xs border-r border-amber-300/60">
         <Megaphone className="h-4 w-4" />
-        系统更新通知
+        表单更新通知
       </div>
 
       {/* 滚动区域 */}

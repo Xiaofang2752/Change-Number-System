@@ -39,7 +39,7 @@ body {
 }
 
 .announce-marquee {
-  animation: announce-marquee 24s linear infinite;
+  animation: announce-marquee 55s linear infinite;
   will-change: transform;
 }
 
