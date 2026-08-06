@@ -159,9 +159,64 @@ function downloadDcp(req, res) {
   return downloadDoc(req, res);
 }
 
+/**
+ * 一键打包下载：将该 DCP 申请当前可用的三类表单（DCP《设计变更方案》/《变更影响评估表》/《风险登记册》）
+ * 按各自"申请时间对应版本"打包为 ZIP，压缩包内以 DCP 编号命名的文件夹包含各文件。
+ */
+function downloadBundle(req, res) {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(id);
+    if (!app) {
+      return errorResponse(res, 404, '申请记录不存在');
+    }
+    if (app.number_type !== 'DCP') {
+      return errorResponse(res, 400, '该记录不是 DCP 申请，无法打包下载');
+    }
+
+    const zip = new PizZip();
+    let added = 0;
+    for (const type of VALID_TYPES) {
+      const tpl = db.prepare(
+        `SELECT id, content, filename, published_at
+         FROM doc_templates
+         WHERE template_type = ? AND DATE(published_at) <= DATE(?)
+         ORDER BY published_at DESC
+         LIMIT 1`
+      ).get(type, app.created_at);
+      if (!tpl || !tpl.content) continue;
+
+      const lower = (tpl.filename || '').toLowerCase();
+      const ext = lower.endsWith('.xlsx') ? 'xlsx' : 'docx';
+      const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
+      const fileName = `${baseName}-${app.full_number}.${ext}`;
+      zip.file(`${app.full_number}/${fileName}`, Buffer.from(tpl.content));
+      added++;
+    }
+
+    if (added === 0) {
+      return errorResponse(res, 400, '该编号申请时间早于所有模板发布时间，暂不支持下载');
+    }
+
+    const buf = zip.generate({ type: 'nodebuffer', mimeType: 'application/zip' });
+    const encodedName = encodeURIComponent(`${app.full_number}.zip`);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="doc.zip"; filename*=UTF-8''${encodedName}`
+    );
+    return res.status(200).send(buf);
+  } catch (err) {
+    console.error('Download bundle error:', err);
+    return errorResponse(res, 500, '打包下载失败');
+  }
+}
+
 module.exports = {
   uploadDocTemplate,
   getDocTemplateMeta,
   downloadDoc,
   downloadDcp,
+  downloadBundle,
 };

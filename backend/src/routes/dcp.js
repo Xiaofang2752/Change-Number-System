@@ -14,6 +14,9 @@ router.get('/doc-template', authMiddleware, dcpController.getDocTemplateMeta);
 // 工程师按申请 id 下载已填充文档（按类型对应模板版本）：/doc/:type/:id
 router.get('/doc/:type/:id', optionalAuthMiddleware, dcpController.downloadDoc);
 
+// 一键打包下载三类表单为 ZIP（以 DCP 编号命名文件夹）：/doc-bundle/:id
+router.get('/doc-bundle/:id', optionalAuthMiddleware, dcpController.downloadBundle);
+
 // 兼容旧 DCP 下载入口：/dcp/:id
 router.get('/:id', optionalAuthMiddleware, dcpController.downloadDcp);
 

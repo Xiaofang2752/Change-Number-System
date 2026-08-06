@@ -23,6 +23,93 @@ interface StatsData {
   byType?: Array<{ number_type: string; count: number }>;
 }
 
+// DCP 申请记录的操作区：下载（弹出选择表单）/ 一键下载（ZIP，以 DCP 编号命名文件夹）
+function DocDownloads({ app }: { app: Application }) {
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const available = ([
+    { type: 'DCP' as const, label: 'DCP《设计变更方案》', id: app.dcp_template_id },
+    { type: 'IMPACT' as const, label: '《变更影响评估表》', id: app.impact_template_id },
+    { type: 'RISK' as const, label: '《风险登记册》', id: app.risk_template_id },
+  ]).filter((x) => x.id);
+
+  if (available.length === 0) return <span className="text-muted-foreground">-</span>;
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          className="bg-green-600 hover:bg-green-700 text-white whitespace-nowrap"
+          onClick={() => setModalOpen(true)}
+        >
+          下载
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="whitespace-nowrap"
+          onClick={() => dcpAPI.downloadBundle(app.id)}
+        >
+          一键下载
+        </Button>
+      </div>
+
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-bold text-slate-800">选择要下载的表单</h3>
+              <button
+                type="button"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                onClick={() => setModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">DCP 编号：{app.full_number}</p>
+            <div className="space-y-2">
+              {available.map((x) => (
+                <button
+                  key={x.type}
+                  type="button"
+                  className="w-full flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
+                  onClick={() => {
+                    setModalOpen(false);
+                    dcpAPI.downloadDoc(x.type, app.id);
+                  }}
+                >
+                  <span>{x.label}</span>
+                  <span className="text-primary font-medium">下载 ›</span>
+                </button>
+              ))}
+            </div>
+            <Button
+              type="button"
+              className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => {
+                setModalOpen(false);
+                dcpAPI.downloadBundle(app.id);
+              }}
+            >
+              一键下载全部（ZIP）
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 
 
 export function ApplicationList() {
@@ -359,39 +446,8 @@ export function ApplicationList() {
                       <Badge variant="secondary" className="text-[10px] md:text-xs">{app.number_type}</Badge>
                     </div>
 
-                    {app.number_type === 'DCP' && isDcpAutoFillEnabled && (app.dcp_template_id || app.impact_template_id || app.risk_template_id) && (
-                      <div className="flex flex-col gap-2">
-                        {app.dcp_template_id && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="w-full bg-green-600 hover:bg-green-700 text-white"
-                            onClick={() => dcpAPI.downloadDoc('DCP', app.id)}
-                          >
-                            📄 下载 DCP《设计变更方案》
-                          </Button>
-                        )}
-                        {app.impact_template_id && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                            onClick={() => dcpAPI.downloadDoc('IMPACT', app.id)}
-                          >
-                            📄 下载《变更影响评估表》
-                          </Button>
-                        )}
-                        {app.risk_template_id && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-                            onClick={() => dcpAPI.downloadDoc('RISK', app.id)}
-                          >
-                            📄 下载《风险登记册》
-                          </Button>
-                        )}
-                      </div>
+                    {app.number_type === 'DCP' && isDcpAutoFillEnabled && (
+                      <DocDownloads app={app} />
                     )}
 
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground pt-1 border-t border-dashed border-border/80">
@@ -494,39 +550,8 @@ export function ApplicationList() {
                           <Badge variant="secondary" className="text-xs md:text-sm">{app.number_type}</Badge>
                         </td>
                         <td className="p-4 text-xs md:text-sm whitespace-nowrap">
-                          {app.number_type === 'DCP' && isDcpAutoFillEnabled && (app.dcp_template_id || app.impact_template_id || app.risk_template_id) ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {app.dcp_template_id && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="bg-green-600 hover:bg-green-700 text-white whitespace-nowrap"
-                                  onClick={() => dcpAPI.downloadDoc('DCP', app.id)}
-                                >
-                                  DCP
-                                </Button>
-                              )}
-                              {app.impact_template_id && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
-                                  onClick={() => dcpAPI.downloadDoc('IMPACT', app.id)}
-                                >
-                                  影响评估
-                                </Button>
-                              )}
-                              {app.risk_template_id && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap"
-                                  onClick={() => dcpAPI.downloadDoc('RISK', app.id)}
-                                >
-                                  风险登记
-                                </Button>
-                              )}
-                            </div>
+                          {app.number_type === 'DCP' && isDcpAutoFillEnabled ? (
+                            <DocDownloads app={app} />
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}

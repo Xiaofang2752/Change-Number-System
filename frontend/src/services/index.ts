@@ -159,6 +159,15 @@ export const dcpAPI = {
     a.click();
     document.body.removeChild(a);
   },
+  // 一键打包下载三类表单（ZIP，以 DCP 编号命名文件夹）
+  downloadBundle: (id: number) => {
+    const a = document.createElement('a');
+    a.href = `/api/dcp/doc-bundle/${id}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
 };
 
 export const adminAPI = {
