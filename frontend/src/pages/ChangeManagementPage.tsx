@@ -301,9 +301,6 @@ export function ChangeManagementPage() {
         <div className="lg:col-span-12">
           <ReleaseAnnouncement />
         </div>
-        <div className="lg:col-span-12">
-          <FormTemplateDownload />
-        </div>
         <div className="lg:col-span-3 min-w-0" data-tour="change-form">
           <ApplicationForm onApplicationSubmitted={handleApplicationSubmitted} />
         </div>
@@ -346,6 +343,7 @@ export function ChangeManagementPage() {
               <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
             </a>
           </div>
+          <FormTemplateDownload />
         </div>
       </div>
       

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { dcpAPI } from '../services';
-import { Download, FileText, FileSpreadsheet } from 'lucide-react';
+import { Download, FileText, FileSpreadsheet, ChevronDown, Sparkles } from 'lucide-react';
 
 type DocTemplateType = 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT';
 
@@ -21,10 +21,11 @@ const FORM_TYPES: { type: DocTemplateType; defaultLabel: string }[] = [
 ];
 
 /**
- * “表单模板下载”板块：工程师直接下载最新空白表单模板（不填编号，占位符保留）。
- * 后台可维护模板内容与名称，下载文件名取后台名称。
+ * “表单模板下载”板块（可折叠）：放右侧十问十答下方。
+ * 工程师点开后可下载最新空白表单模板（不填编号，占位符保留）。
  */
 export function FormTemplateDownload() {
+  const [open, setOpen] = useState(false);
   const [list, setList] = useState<TplInfo[]>(
     FORM_TYPES.map((f) => ({ ...f, exists: false }))
   );
@@ -41,81 +42,86 @@ export function FormTemplateDownload() {
             const ext: 'docx' | 'xlsx' | undefined = data?.filename
               ? (data.filename.toLowerCase().endsWith('.xlsx') ? 'xlsx' : 'docx')
               : undefined;
-            return {
-              ...f,
-              exists: !!data?.exists,
-              display_name: data?.display_name || null,
-              ext,
-            } as TplInfo;
+            return { ...f, exists: !!data?.exists, display_name: data?.display_name || null, ext } as TplInfo;
           })
           .catch(() => ({ ...f, exists: false } as TplInfo))
       )
     ).then((results) => {
-      if (!cancelled) setList(results);
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setList(results);
+        setLoading(false);
+      }
     });
     return () => { cancelled = true; };
   }, []);
 
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-slate-50 via-slate-100/50 to-slate-50 border-b px-6 py-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Download className="h-5 w-5 text-primary" />
-            表单模板下载
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            下载最新空白表单模板（含占位符，请工程师手动填写）。后台维护，版本随发布更新。
-          </p>
-        </div>
-      </div>
+  const readyCount = list.filter((i) => i.exists).length;
 
-      <div className="p-6">
-        {loading ? (
-          <div className="text-center py-6 text-sm text-slate-500">加载模板列表...</div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {list.map((item) => {
-              const name = item.display_name || item.defaultLabel;
-              const isXlsx = item.ext === 'xlsx';
-              return (
-                <div
-                  key={item.type}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 hover:border-primary/50 hover:shadow-sm transition"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    {isXlsx ? (
-                      <FileSpreadsheet className="h-5 w-5 text-emerald-600 shrink-0" />
-                    ) : (
-                      <FileText className="h-5 w-5 text-sky-600 shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate" title={name}>{name}</p>
-                      <p className="text-[11px] text-slate-400">
-                        {item.type}{item.exists ? ` · ${item.ext?.toUpperCase()}` : ' · 未上传'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!item.exists}
-                    onClick={() => dcpAPI.downloadTemplateFile(item.type)}
-                    className={`shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                      item.exists
-                        ? 'bg-green-600 hover:bg-green-700 text-white'
-                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    }`}
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      {/* 可点击的标题栏 */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3.5 py-3 text-left hover:bg-slate-50 transition-colors"
+      >
+        <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+        <span className="text-sm font-bold text-slate-800 flex-1">表单模板下载</span>
+        {/* 闪亮标识 */}
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black text-white bg-gradient-to-r from-amber-400 to-orange-500 shadow-[0_0_10px_rgba(251,146,60,0.65)] animate-pulse">
+          {readyCount > 0 ? `${readyCount} 个可下` : 'NEW'}
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {/* 折叠内容 */}
+      {open && (
+        <div className="px-3 pb-3 pt-1 border-t border-slate-100">
+          <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
+            点击下载最新空白模板（含占位符，请手动填写）。后台维护，版本随发布更新。
+          </p>
+          {loading ? (
+            <div className="text-center py-4 text-xs text-slate-400">加载中...</div>
+          ) : (
+            <div className="space-y-1.5">
+              {list.map((item) => {
+                const name = item.display_name || item.defaultLabel;
+                const isXlsx = item.ext === 'xlsx';
+                return (
+                  <div
+                    key={item.type}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 hover:border-primary/50 transition"
                   >
-                    <Download className="h-3.5 w-3.5" />
-                    下载
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isXlsx ? (
+                        <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-sky-600 shrink-0" />
+                      )}
+                      <span className="text-xs font-medium text-slate-700 truncate" title={name}>{name}</span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!item.exists}
+                      onClick={() => dcpAPI.downloadTemplateFile(item.type)}
+                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition ${
+                        item.exists
+                          ? 'bg-green-600 hover:bg-green-700 text-white'
+                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <Download className="h-3 w-3" />
+                      下载
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
