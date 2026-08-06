@@ -3,21 +3,19 @@ import { dcpAPI } from '../services';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 
-type DocTemplateType = 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT';
+type DocTemplateType = 'DCP' | 'IMPACT' | 'RISK';
 
 interface DcpTemplateVersion {
   id: number;
   filename?: string;
   published_at?: string;
   created_by?: string | null;
-  display_name?: string | null;
 }
 
 interface DcpTemplateMeta {
   type?: DocTemplateType;
   exists: boolean;
   filename?: string;
-  display_name?: string | null;
   updated_at?: string;
   latest_id?: number | null;
   versions?: DcpTemplateVersion[];
@@ -27,31 +25,24 @@ const TEMPLATE_TYPES: { type: DocTemplateType; label: string; hint: string }[] =
   { type: 'DCP', label: 'DCP《设计变更方案》', hint: '{dcp_no} / {project_code} / {applicant_name} / {date}' },
   { type: 'IMPACT', label: '《变更影响评估表》', hint: '{dcp_no} 等占位符，其余由工程师填写' },
   { type: 'RISK', label: '《风险登记册》', hint: '{dcp_no} 等占位符，其余由工程师填写' },
-  { type: 'VERIFY', label: '《验证模板》', hint: '{dcp_no} 等占位符，其余由工程师填写' },
-  { type: 'IMPLEMENT', label: '《变更实施表》', hint: '{dcp_no} 等占位符，其余由工程师填写' },
 ];
 
 /**
- * 变更系列表单模板维护组件（版本化）。
- * 供管理员导入/维护各类 Word(.docx) / Excel(.xlsx) 模板，并支持更新模板名称。
- * 包含：DCP《设计变更方案》、《变更影响评估表》、《风险登记册》、《验证模板》、《变更实施表》。
+ * DCP 相关表单模板维护组件（版本化）。
+ * 供管理员在"变更管理"页的对应页签下导入/维护 Word(.docx) 模板。
+ * 支持 DCP《设计变更方案》、《变更影响评估表》、《风险登记册》三类。
  */
 export function DcpTemplateManager() {
   const [activeType, setActiveType] = useState<DocTemplateType>('DCP');
   const [meta, setMeta] = useState<DcpTemplateMeta | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [savingName, setSavingName] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const loadMeta = () => {
     dcpAPI.getTemplateMeta(activeType)
       .then((res) => {
-        const data = (res as unknown as { data: DcpTemplateMeta }).data;
-        setMeta(data);
-        const def = TEMPLATE_TYPES.find(t => t.type === activeType)?.label || '';
-        setName(data?.display_name || def);
+        setMeta((res as unknown as { data: DcpTemplateMeta }).data);
       })
       .catch(() => {
         // 获取失败不影响页面渲染（多为未登录/网络问题，由拦截器统一处理）
@@ -81,7 +72,6 @@ export function DcpTemplateManager() {
       setUploading(true);
       const formData = new FormData();
       formData.append('file', file);
-      if (name.trim()) formData.append('name', name.trim());
       await dcpAPI.uploadTemplate(activeType, formData);
       await loadMeta();
       setFile(null);
@@ -91,24 +81,6 @@ export function DcpTemplateManager() {
       setNotification({ message: (err as { message?: string }).message || '上传失败，请重试', type: 'error' });
     } finally {
       setUploading(false);
-    }
-  };
-
-  const handleRename = async () => {
-    if (!name.trim()) {
-      setNotification({ message: '模板名称不能为空', type: 'error' });
-      return;
-    }
-    try {
-      setSavingName(true);
-      await dcpAPI.renameTemplate(activeType, name.trim());
-      await loadMeta();
-      setNotification({ message: `模板名称已更新为「${name.trim()}」`, type: 'success' });
-    } catch (err: unknown) {
-      console.error('改名失败:', err);
-      setNotification({ message: (err as { message?: string }).message || '改名失败，请重试', type: 'error' });
-    } finally {
-      setSavingName(false);
     }
   };
 
@@ -154,30 +126,12 @@ export function DcpTemplateManager() {
                 {meta?.exists ? (
                   <span>
                     已上传模板：<span className="font-medium text-gray-700">{meta.filename}</span>
-                    {meta.display_name && <span> · 名称：<span className="font-medium text-gray-700">{meta.display_name}</span></span>}
                     {meta.updated_at && <span> （更新于 {meta.updated_at}）</span>}
                   </span>
                 ) : (
                   <span className="text-orange-600">尚未上传模板，工程师在提交对应 DCP 编号申请后将无法下载该表单。</span>
                 )}
               </div>
-            </div>
-
-            {/* 模板名称（可更新） */}
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex-1 min-w-[220px]">
-                <label className="block text-sm font-medium mb-1">模板名称（可更新）</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="如 QST-MS04-01-001-R002 B 设计变更方案"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <Button onClick={handleRename} disabled={savingName || !meta?.exists}>
-                {savingName ? '保存中...' : '保存名称'}
-              </Button>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -209,7 +163,7 @@ export function DcpTemplateManager() {
                 <div><code className="bg-gray-100 px-1 rounded">{'{date}'}</code> — 申请日期（YYYY-MM-DD）</div>
               </div>
               <div className="mt-2 text-orange-600">
-                每次上传都会新增一个模板版本。工程师下载时，系统按其 DCP 编号的「申请日期」对应到当日或之前发布的该类型最新模板版本。模板名称可单独更新，不影响历史版本内容。
+                每次上传都会新增一个模板版本。工程师下载时，系统按其 DCP 编号的「申请日期」对应到当日或之前发布的该类型最新模板版本。
               </div>
             </div>
 
@@ -221,7 +175,6 @@ export function DcpTemplateManager() {
                     <thead className="bg-muted">
                       <tr>
                         <th className="h-9 px-3 text-left font-medium whitespace-nowrap">版本 ID</th>
-                        <th className="h-9 px-3 text-left font-medium whitespace-nowrap">名称</th>
                         <th className="h-9 px-3 text-left font-medium whitespace-nowrap">文件名</th>
                         <th className="h-9 px-3 text-left font-medium whitespace-nowrap">发布时间</th>
                         <th className="h-9 px-3 text-left font-medium whitespace-nowrap">上传人</th>
@@ -231,7 +184,6 @@ export function DcpTemplateManager() {
                       {meta.versions.map((v) => (
                         <tr key={v.id} className="border-t">
                           <td className="px-3 py-2 whitespace-nowrap font-mono">#{v.id}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{v.display_name || '-'}</td>
                           <td className="px-3 py-2 whitespace-nowrap">{v.filename || '-'}</td>
                           <td className="px-3 py-2 whitespace-nowrap">{v.published_at || '-'}</td>
                           <td className="px-3 py-2 whitespace-nowrap">{v.created_by || '-'}</td>

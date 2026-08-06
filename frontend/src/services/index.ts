@@ -53,8 +53,6 @@ export interface Application {
   dcp_template_id?: number | null; // 申请时间当日或之前发布的 DCP 模板版本 id（用于判断是否可下载）
   impact_template_id?: number | null; // 《变更影响评估表》对应模板版本 id
   risk_template_id?: number | null; // 《风险登记册》对应模板版本 id
-  verify_template_id?: number | null; // 《验证模板》对应模板版本 id
-  implement_template_id?: number | null; // 《变更实施表》对应模板版本 id
 }
 
 
@@ -135,18 +133,11 @@ export const applicationAPI = {
 };
 
 export const dcpAPI = {
-  getTemplateMeta: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT') => api.get(`/dcp/doc-template?type=${type}`),
-  uploadTemplate: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT', formData: FormData) =>
+  getTemplateMeta: (type: 'DCP' | 'IMPACT' | 'RISK') => api.get(`/dcp/doc-template?type=${type}`),
+  uploadTemplate: (type: 'DCP' | 'IMPACT' | 'RISK', formData: FormData) =>
     api.post(`/dcp/doc-template?type=${type}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
-        Authorization: localStorage.getItem('adminToken') ? `Bearer ${localStorage.getItem('adminToken')}` : '',
-      },
-    }),
-  // 后台更新某类型模板显示名称（不改内容/版本）
-  renameTemplate: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT', name: string) =>
-    api.post(`/dcp/doc-template/rename?type=${type}`, { name }, {
-      headers: {
         Authorization: localStorage.getItem('adminToken') ? `Bearer ${localStorage.getItem('adminToken')}` : '',
       },
     }),
@@ -159,8 +150,8 @@ export const dcpAPI = {
     a.click();
     document.body.removeChild(a);
   },
-  // 按类型下载已填充文档（type: DCP / IMPACT / RISK / VERIFY / IMPLEMENT），版本按申请时间对应
-  downloadDoc: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT', id: number) => {
+  // 按类型下载已填充文档（type: DCP / IMPACT / RISK），版本按申请时间对应
+  downloadDoc: (type: 'DCP' | 'IMPACT' | 'RISK', id: number) => {
     const a = document.createElement('a');
     a.href = `/api/dcp/doc/${type}/${id}`;
     a.style.display = 'none';

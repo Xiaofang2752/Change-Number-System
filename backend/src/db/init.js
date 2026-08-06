@@ -355,16 +355,15 @@ db.exec(`
   );
 `);
 
-// 文档模板表（版本化，支持多种类型：DCP / IMPACT / RISK / VERIFY / IMPLEMENT）
+// 文档模板表（版本化，支持多种类型：DCP《设计变更方案》/ IMPACT《变更影响评估表》/ RISK《风险登记册》）
 db.exec(`
   CREATE TABLE IF NOT EXISTS doc_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    template_type TEXT NOT NULL,
+    template_type TEXT NOT NULL CHECK (template_type IN ('DCP', 'IMPACT', 'RISK')),
     filename TEXT,
     content BLOB,
     published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT,
-    display_name TEXT
+    created_by TEXT
   );
 `);
 
@@ -416,47 +415,6 @@ function migrateDocTemplates() {
 }
 
 migrateDocTemplates();
-
-// 迁移: 移除 doc_templates.template_type 的 CHECK 约束（允许后续新增类型，如 VERIFY/IMPLEMENT），
-// 并新增 display_name 列（供后台维护模板名称，支持名称更新）
-function migrateDocTemplatesSchema() {
-  try {
-    const info = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='doc_templates'`).get();
-    if (!info) return; // 表不存在，等待 CREATE TABLE 处理
-    const hasCheck = /CHECK\s*\(/i.test(info.sql);
-    const cols = db.prepare(`PRAGMA table_info('doc_templates')`).all().map((c) => c.name);
-    if (hasCheck || !cols.includes('display_name')) {
-      console.log('Migrating doc_templates: 移除 CHECK 约束并新增 display_name 列...');
-      db.exec(`ALTER TABLE doc_templates RENAME TO doc_templates_old`);
-      db.exec(`
-        CREATE TABLE doc_templates (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          template_type TEXT NOT NULL,
-          filename TEXT,
-          content BLOB,
-          published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          created_by TEXT,
-          display_name TEXT
-        )
-      `);
-      db.exec(`
-        INSERT INTO doc_templates (id, template_type, filename, content, published_at, created_by, display_name)
-        SELECT id, template_type, filename, content, published_at, created_by, NULL FROM doc_templates_old
-      `);
-      db.exec(`DROP TABLE doc_templates_old`);
-      console.log('doc_templates migration completed (CHECK removed, display_name added)');
-    }
-  } catch (err) {
-    console.error('migrateDocTemplatesSchema error:', err.message);
-    try {
-      db.exec(`DROP TABLE IF EXISTS doc_templates_old`);
-    } catch (e) {
-      /* ignore */
-    }
-  }
-}
-
-migrateDocTemplatesSchema();
 
 // 迁移: 首次启动时把现有 10 条硬编码内容作为初始 published 版插入
 function migrateGuideQna() {
