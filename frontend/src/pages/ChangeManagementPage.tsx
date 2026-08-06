@@ -11,6 +11,8 @@ import { Button } from '../components/ui/button';
 import * as XLSX from 'xlsx';
 import { useTour } from '../hooks/useTour';
 import { CHANGE_STEPS } from '../tour/steps';
+import { ReleaseAnnouncement } from '../components/ReleaseAnnouncement';
+import { FormTemplateDownload } from '../components/FormTemplateDownload';
 
 interface ImportError {
   line: number | string;
@@ -296,6 +298,9 @@ export function ChangeManagementPage() {
   return (
     <Layout>
       <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-12">
+          <ReleaseAnnouncement />
+        </div>
         <div className="lg:col-span-3 min-w-0" data-tour="change-form">
           <ApplicationForm onApplicationSubmitted={handleApplicationSubmitted} />
         </div>
@@ -338,6 +343,7 @@ export function ChangeManagementPage() {
               <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
             </a>
           </div>
+          <FormTemplateDownload />
         </div>
       </div>
       

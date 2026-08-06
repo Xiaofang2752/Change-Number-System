@@ -355,15 +355,108 @@ db.exec(`
   );
 `);
 
-// 创建 DCP《设计变更方案》模板表（单例，id 固定为 1，存储管理员上传的 .docx 模板）
+// 文档模板表（版本化，支持多种类型：DCP / IMPACT / RISK / VERIFY / IMPLEMENT）
 db.exec(`
-  CREATE TABLE IF NOT EXISTS dcp_template (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+  CREATE TABLE IF NOT EXISTS doc_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_type TEXT NOT NULL,
     filename TEXT,
     content BLOB,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT,
+    display_name TEXT
   );
 `);
+
+// 文档模板表迁移：旧 dcp_templates / 单例 dcp_template 统一迁移到 doc_templates(type=DCP)
+function migrateDocTemplates() {
+  try {
+    const newTable = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='doc_templates'`).get();
+    if (newTable) return; // 已是新表，无需迁移
+
+    db.exec(`
+      CREATE TABLE doc_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_type TEXT NOT NULL CHECK (template_type IN ('DCP', 'IMPACT', 'RISK')),
+        filename TEXT,
+        content BLOB,
+        published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_by TEXT
+      )
+    `);
+
+    // 旧多版本表 dcp_templates
+    const oldMulti = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='dcp_templates'`).get();
+    if (oldMulti) {
+      db.prepare(
+        `INSERT INTO doc_templates (filename, content, published_at, created_by, template_type)
+         SELECT filename, content, published_at, created_by, 'DCP' FROM dcp_templates`
+      ).run();
+      db.exec('DROP TABLE dcp_templates');
+      console.log('migrateDocTemplates: dcp_templates 已迁移为 doc_templates (type=DCP)');
+      return;
+    }
+
+    // 更旧的单例表 dcp_template（id=1）
+    const oldSingle = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='dcp_template'`).get();
+    if (oldSingle) {
+      const row = db.prepare('SELECT filename, content, updated_at FROM dcp_template WHERE id = 1').get();
+      if (row && row.content) {
+        db.prepare(
+          `INSERT INTO doc_templates (filename, content, published_at, template_type)
+           VALUES (?, ?, COALESCE(?, CURRENT_TIMESTAMP), 'DCP')`
+        ).run(row.filename, row.content, row.updated_at);
+      }
+      db.exec('DROP TABLE dcp_template');
+      console.log('migrateDocTemplates: 旧单例 dcp_template 已迁移为 doc_templates (type=DCP)');
+    }
+  } catch (err) {
+    console.error('migrateDocTemplates error:', err.message);
+  }
+}
+
+migrateDocTemplates();
+
+// 迁移: 移除 doc_templates.template_type 的 CHECK 约束（允许后续新增类型，如 VERIFY/IMPLEMENT），
+// 并新增 display_name 列（供后台维护模板名称，支持名称更新）
+function migrateDocTemplatesSchema() {
+  try {
+    const info = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='doc_templates'`).get();
+    if (!info) return; // 表不存在，等待 CREATE TABLE 处理
+    const hasCheck = /CHECK\s*\(/i.test(info.sql);
+    const cols = db.prepare(`PRAGMA table_info('doc_templates')`).all().map((c) => c.name);
+    if (hasCheck || !cols.includes('display_name')) {
+      console.log('Migrating doc_templates: 移除 CHECK 约束并新增 display_name 列...');
+      db.exec(`ALTER TABLE doc_templates RENAME TO doc_templates_old`);
+      db.exec(`
+        CREATE TABLE doc_templates (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          template_type TEXT NOT NULL,
+          filename TEXT,
+          content BLOB,
+          published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          created_by TEXT,
+          display_name TEXT
+        )
+      `);
+      db.exec(`
+        INSERT INTO doc_templates (id, template_type, filename, content, published_at, created_by, display_name)
+        SELECT id, template_type, filename, content, published_at, created_by, NULL FROM doc_templates_old
+      `);
+      db.exec(`DROP TABLE doc_templates_old`);
+      console.log('doc_templates migration completed (CHECK removed, display_name added)');
+    }
+  } catch (err) {
+    console.error('migrateDocTemplatesSchema error:', err.message);
+    try {
+      db.exec(`DROP TABLE IF EXISTS doc_templates_old`);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+
+migrateDocTemplatesSchema();
 
 // 迁移: 首次启动时把现有 10 条硬编码内容作为初始 published 版插入
 function migrateGuideQna() {

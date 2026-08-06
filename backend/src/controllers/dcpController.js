@@ -4,57 +4,280 @@ const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+// 占位符 → 实际值映射（Word / Excel 共用）
+function buildPlaceholderData(app) {
+  return {
+    dcp_no: app.full_number,
+    project_code: app.project_code || '',
+    applicant_name: app.applicant_name || '',
+    date: (app.created_at || '').split(' ')[0] || '',
+  };
+}
+
+// 填充 Word(.docx) 模板
+function fillDocx(content, data) {
+  const zip = new PizZip(content);
+  const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+  doc.render(data);
+  return doc.getZip().generate({ type: 'nodebuffer', mimeType: DOCX_MIME });
+}
+
+// 填充 Excel(.xlsx) 模板：直接在各 XML 部件中替换占位符，避免 exceljs 全量解析/重写（慢）
+// xlsx 本质是 zip，占位符以纯文本存在于 sheet 或 sharedStrings 的 XML 中，全局替换即可，且完整保留格式/图片
+function escapeXml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fillXlsx(content, data) {
+  const zip = new PizZip(content);
+  const replacements = [
+    ['{dcp_no}', escapeXml(data.dcp_no)],
+    ['{project_code}', escapeXml(data.project_code)],
+    ['{applicant_name}', escapeXml(data.applicant_name)],
+    ['{date}', escapeXml(data.date)],
+  ];
+  Object.keys(zip.files).forEach((relativePath) => {
+    const entry = zip.files[relativePath];
+    if (entry.dir || !relativePath.endsWith('.xml')) return;
+    let str = entry.asText();
+    let changed = false;
+    for (const [k, val] of replacements) {
+      if (str.indexOf(k) !== -1) {
+        str = str.split(k).join(val);
+        changed = true;
+      }
+    }
+    if (changed) {
+      zip.file(relativePath, str);
+    }
+  });
+  return zip.generate({ type: 'nodebuffer', mimeType: XLSX_MIME });
+}
+
+// 按模板文件类型渲染（docx 填充 / xlsx 填充），返回 { buf, ext, mimeType }
+async function renderTemplate(tpl, data) {
+  const lower = (tpl.filename || '').toLowerCase();
+  if (lower.endsWith('.xlsx')) {
+    const buf = await fillXlsx(tpl.content, data);
+    return { buf, ext: 'xlsx', mimeType: XLSX_MIME };
+  }
+  // 默认按 docx 处理
+  const buf = fillDocx(tpl.content, data);
+  return { buf, ext: 'docx', mimeType: DOCX_MIME };
+}
+
+// 支持的文档模板类型（默认显示名称，后台可改名覆盖）
+const DOC_TEMPLATE_TYPES = {
+  DCP: 'QST-MS04-01-001-R002 B 设计变更方案',
+  IMPACT: 'QST-MS04-01-001-R003 B 变更影响评估表',
+  RISK: 'QST-QP04-02-R005 C 风险登记册',
+  VERIFY: 'QST-MS04-01-001-R006 B 验证模板',
+  IMPLEMENT: 'QST-MS04-01-001-R011-017 B 变更实施表',
+};
+const VALID_TYPES = Object.keys(DOC_TEMPLATE_TYPES);
+
+// 取模板显示名称：优先用后台维护的名称，回退到默认名称
+function getDisplayName(type, tpl) {
+  const name = tpl && tpl.display_name ? tpl.display_name : (DOC_TEMPLATE_TYPES[type] || type);
+  return String(name).replace(/[《》]/g, '').trim();
+}
+
+function normalizeType(raw) {
+  if (!raw) return null;
+  const t = String(raw).toUpperCase();
+  return VALID_TYPES.includes(t) ? t : null;
+}
 
 /**
- * 管理员上传 DCP《设计变更方案》Word 模板（单例，覆盖式存储）
+ * 管理员上传某类文档模板（版本化：每次上传新增一个版本）
+ * 类型通过查询参数 ?type=DCP|IMPACT|RISK 指定
  * multer 在路由层以 single('file') 注入 req.file
  */
-function uploadTemplate(req, res) {
+function uploadDocTemplate(req, res) {
   try {
+    const type = normalizeType(req.query.type);
+    if (!type) {
+      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK）');
+    }
     if (!req.file) {
       return errorResponse(res, 400, '请上传模板文件');
     }
     const originalName = req.file.originalname || '';
-    if (!originalName.toLowerCase().endsWith('.docx')) {
-      return errorResponse(res, 400, '模板仅支持 .docx 格式的 Word 文档');
+    const lowerName = originalName.toLowerCase();
+    if (!lowerName.endsWith('.docx') && !lowerName.endsWith('.xlsx')) {
+      return errorResponse(res, 400, '模板仅支持 .docx（Word）或 .xlsx（Excel）格式');
     }
     const db = getDatabase();
-    db.prepare(
-      `INSERT INTO dcp_template (id, filename, content, updated_at)
-       VALUES (1, ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(id) DO UPDATE SET filename = excluded.filename, content = excluded.content, updated_at = CURRENT_TIMESTAMP`
-    ).run(originalName, req.file.buffer);
+    const createdBy = req.admin?.username || req.admin?.id || null;
+    // 名称：后台上传时可指定（支持改名），否则用默认名称
+    const displayName = (req.body && req.body.name && String(req.body.name).trim()) || DOC_TEMPLATE_TYPES[type] || type;
+    const info = db.prepare(
+      `INSERT INTO doc_templates (template_type, filename, content, published_at, created_by, display_name)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+    ).run(type, originalName, req.file.buffer, createdBy, displayName);
 
-    return successResponse(res, { filename: originalName, size: req.file.size }, '模板上传成功');
+    return successResponse(res, { id: info.lastInsertRowid, type, filename: originalName, display_name: displayName, size: req.file.size }, `${DOC_TEMPLATE_TYPES[type]} 模板上传成功（已新增版本）`);
   } catch (err) {
-    console.error('Upload DCP template error:', err);
+    console.error('Upload doc template error:', err);
     return errorResponse(res, 500, '上传模板失败');
   }
 }
 
 /**
- * 获取当前模板元信息（不含二进制内容），供管理员页展示状态
+ * 获取某类模板元信息（不含二进制内容），供管理员页展示状态与版本历史
+ * 类型通过查询参数 ?type=DCP|IMPACT|RISK|VERIFY|IMPLEMENT 指定
  */
-function getTemplateMeta(req, res) {
+function getDocTemplateMeta(req, res) {
   try {
+    const type = normalizeType(req.query.type);
+    if (!type) {
+      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK / VERIFY / IMPLEMENT）');
+    }
     const db = getDatabase();
-    const row = db.prepare('SELECT filename, updated_at FROM dcp_template WHERE id = 1').get();
+    const latest = db.prepare('SELECT id, filename, published_at, display_name FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
+    const versions = db.prepare('SELECT id, filename, published_at, created_by, display_name FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC').all(type);
     return successResponse(res, {
-      exists: !!row,
-      filename: row?.filename || null,
-      updated_at: row?.updated_at || null,
+      type,
+      exists: !!latest,
+      filename: latest?.filename || null,
+      display_name: latest?.display_name || DOC_TEMPLATE_TYPES[type] || null,
+      updated_at: latest?.published_at || null,
+      latest_id: latest?.id || null,
+      versions,
     });
   } catch (err) {
-    console.error('Get DCP template meta error:', err);
+    console.error('Get doc template meta error:', err);
     return errorResponse(res, 500, '获取模板信息失败');
   }
 }
 
 /**
- * 按申请 id 生成并下载已填充的 DCP《设计变更方案》.docx
- * 仅支持 number_type = 'DCP' 的申请；DCP No. 自动填充为申请编号
+ * 按申请 id 生成并下载已填充的某类文档
+ * 使用"申请时间当日或之前发布"的该类型最新模板版本（版本随申请时间对应模板迭代）。
+ * 若申请时间早于该类型任何模板发布时间，则不支持下载。
  */
-function downloadFilled(req, res) {
+// 后台更新某类型模板的显示名称（仅改最新版本的名称，不改内容/版本）
+function renameDocTemplate(req, res) {
+  try {
+    const type = normalizeType(req.query.type);
+    if (!type) {
+      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK / VERIFY / IMPLEMENT）');
+    }
+    const name = (req.body && req.body.name && String(req.body.name).trim()) || '';
+    if (!name) {
+      return errorResponse(res, 400, '名称不能为空');
+    }
+    const db = getDatabase();
+    const latest = db.prepare('SELECT id FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
+    if (!latest) {
+      return errorResponse(res, 400, `该类型尚未上传模板，无法改名`);
+    }
+    db.prepare('UPDATE doc_templates SET display_name = ? WHERE id = ?').run(name, latest.id);
+    return successResponse(res, { type, display_name: name }, `${DOC_TEMPLATE_TYPES[type]} 名称已更新为「${name}」`);
+  } catch (err) {
+    console.error('Rename doc template error:', err);
+    return errorResponse(res, 500, '模板改名失败');
+  }
+}
+
+// 工程师直接下载某类最新"空白模板"（不按申请编号填充，占位符保留，供做模板库）
+function downloadTemplateFile(req, res) {
+  try {
+    const type = normalizeType(req.query.type);
+    if (!type) {
+      return errorResponse(res, 400, '非法的模板类型');
+    }
+    const db = getDatabase();
+    const tpl = db.prepare(
+      `SELECT id, content, filename, display_name
+       FROM doc_templates
+       WHERE template_type = ?
+       ORDER BY published_at DESC
+       LIMIT 1`
+    ).get(type);
+    if (!tpl || !tpl.content) {
+      return errorResponse(res, 404, `尚未上传${DOC_TEMPLATE_TYPES[type]}`);
+    }
+
+    const baseName = getDisplayName(type, tpl);
+    const lower = (tpl.filename || '').toLowerCase();
+    const ext = lower.endsWith('.xlsx') ? 'xlsx' : 'docx';
+    const mimeType = ext === 'xlsx' ? XLSX_MIME : DOCX_MIME;
+    const encodedName = encodeURIComponent(`${baseName}.${ext}`);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="template.${ext}"; filename*=UTF-8''${encodedName}`
+    );
+    return res.status(200).send(Buffer.from(tpl.content));
+  } catch (err) {
+    console.error('Download template file error:', err);
+    return errorResponse(res, 500, '下载模板失败');
+  }
+}
+
+async function downloadDoc(req, res) {
+  try {
+    const type = normalizeType(req.params.type);
+    if (!type) {
+      return errorResponse(res, 400, '非法的模板类型');
+    }
+    const { id } = req.params;
+    const db = getDatabase();
+    const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(id);
+    if (!app) {
+      return errorResponse(res, 404, '申请记录不存在');
+    }
+
+    // 取申请时间当日或之前发布的最新模板版本
+    const tpl = db.prepare(
+      `SELECT id, content, filename, published_at
+       FROM doc_templates
+       WHERE template_type = ? AND DATE(published_at) <= DATE(?)
+       ORDER BY published_at DESC
+       LIMIT 1`
+    ).get(type, app.created_at);
+    if (!tpl || !tpl.content) {
+      return errorResponse(res, 400, `该编号申请时间早于${DOC_TEMPLATE_TYPES[type]}模板发布时间，暂不支持下载`);
+    }
+
+    const data = buildPlaceholderData(app);
+
+    let rendered;
+    try {
+      rendered = await renderTemplate(tpl, data);
+    } catch (renderErr) {
+      console.error('Render template error:', renderErr);
+      return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
+    }
+
+    const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
+    const encodedName = encodeURIComponent(`${baseName}-${app.full_number}.${rendered.ext}`);
+    res.setHeader('Content-Type', rendered.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="doc.${rendered.ext}"; filename*=UTF-8''${encodedName}`
+    );
+    return res.status(200).send(rendered.buf);
+  } catch (err) {
+    console.error('Download docx error:', err);
+    return errorResponse(res, 500, '生成文档失败');
+  }
+}
+
+// 兼容旧入口：/dcp/:id 等同于 DCP 类型下载
+function downloadDcp(req, res) {
+  req.params.type = 'DCP';
+  return downloadDoc(req, res);
+}
+
+/**
+ * 一键打包下载：将该 DCP 申请当前可用的三类表单（DCP《设计变更方案》/《变更影响评估表》/《风险登记册》）
+ * 按各自"申请时间对应版本"打包为 ZIP，压缩包内以 DCP 编号命名的文件夹包含各文件。
+ */
+async function downloadBundle(req, res) {
   try {
     const { id } = req.params;
     const db = getDatabase();
@@ -63,50 +286,59 @@ function downloadFilled(req, res) {
       return errorResponse(res, 404, '申请记录不存在');
     }
     if (app.number_type !== 'DCP') {
-      return errorResponse(res, 400, '该记录不是 DCP 申请，无法生成《设计变更方案》');
-    }
-    const tpl = db.prepare('SELECT content, filename FROM dcp_template WHERE id = 1').get();
-    if (!tpl || !tpl.content) {
-      return errorResponse(res, 400, '尚未配置 DCP 模板，请联系管理员在后台上传');
+      return errorResponse(res, 400, '该记录不是 DCP 申请，无法打包下载');
     }
 
-    const data = {
-      dcp_no: app.full_number,
-      project_code: app.project_code || '',
-      applicant_name: app.applicant_name || '',
-      date: (app.created_at || '').split(' ')[0] || '',
-    };
+    const zip = new PizZip();
+    let added = 0;
+    const data = buildPlaceholderData(app);
+    for (const type of VALID_TYPES) {
+      const tpl = db.prepare(
+        `SELECT id, content, filename, published_at
+         FROM doc_templates
+         WHERE template_type = ? AND DATE(published_at) <= DATE(?)
+         ORDER BY published_at DESC
+         LIMIT 1`
+      ).get(type, app.created_at);
+      if (!tpl || !tpl.content) continue;
 
-    let doc;
-    try {
-      const zip = new PizZip(tpl.content);
-      doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
-      doc.render(data);
-    } catch (renderErr) {
-      console.error('Render DCP docx error:', renderErr);
-      return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（{{dcp_no}} 等）');
+      let rendered;
+      try {
+        rendered = await renderTemplate(tpl, data);
+      } catch (renderErr) {
+        console.error('Render template in bundle error:', renderErr);
+        return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
+      }
+      const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
+      const fileName = `${baseName}-${app.full_number}.${rendered.ext}`;
+      zip.file(`${app.full_number}/${fileName}`, rendered.buf);
+      added++;
     }
 
-    const buf = doc.getZip().generate({
-      type: 'nodebuffer',
-      mimeType: DOCX_MIME,
-    });
+    if (added === 0) {
+      return errorResponse(res, 400, '该编号申请时间早于所有模板发布时间，暂不支持下载');
+    }
 
-    const encodedName = encodeURIComponent(`DCP设计变更方案-${app.full_number}.docx`);
-    res.setHeader('Content-Type', DOCX_MIME);
+    const buf = zip.generate({ type: 'nodebuffer', mimeType: 'application/zip' });
+    const encodedName = encodeURIComponent(`${app.full_number}.zip`);
+    res.setHeader('Content-Type', 'application/zip');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="dcp.docx"; filename*=UTF-8''${encodedName}`
+      `attachment; filename="doc.zip"; filename*=UTF-8''${encodedName}`
     );
     return res.status(200).send(buf);
   } catch (err) {
-    console.error('Download DCP docx error:', err);
-    return errorResponse(res, 500, '生成 DCP 文档失败');
+    console.error('Download bundle error:', err);
+    return errorResponse(res, 500, '打包下载失败');
   }
 }
 
 module.exports = {
-  uploadTemplate,
-  getTemplateMeta,
-  downloadFilled,
+  uploadDocTemplate,
+  getDocTemplateMeta,
+  renameDocTemplate,
+  downloadTemplateFile,
+  downloadDoc,
+  downloadDcp,
+  downloadBundle,
 };

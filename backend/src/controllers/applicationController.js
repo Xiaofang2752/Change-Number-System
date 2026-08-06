@@ -401,7 +401,11 @@ function getApplications(req, res) {
       orderDirection = upperOrder;
     }
 
-    let query = 'SELECT * FROM applications';
+    let query = `SELECT a.*,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'DCP' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS dcp_template_id,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'IMPACT' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS impact_template_id,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'RISK' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS risk_template_id
+      FROM applications a`;
     const whereClauses = [];
     const params = [];
 
@@ -491,8 +495,8 @@ function getApplications(req, res) {
       query += ' WHERE ' + whereClauses.join(' AND ');
     }
 
-    // 获取总数
-    const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as total');
+    // 获取总数（将主查询的列部分替换为 COUNT，主表别名为 applications a）
+    const countQuery = query.replace(/SELECT[\s\S]*?FROM applications a/, 'SELECT COUNT(*) as total FROM applications a');
     const { total } = db.prepare(countQuery).all(...params)[0];
 
     // 分页
