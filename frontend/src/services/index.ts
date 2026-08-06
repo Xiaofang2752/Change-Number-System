@@ -133,14 +133,30 @@ export const applicationAPI = {
 };
 
 export const dcpAPI = {
-  getTemplateMeta: (type: 'DCP' | 'IMPACT' | 'RISK') => api.get(`/dcp/doc-template?type=${type}`),
-  uploadTemplate: (type: 'DCP' | 'IMPACT' | 'RISK', formData: FormData) =>
+  getTemplateMeta: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT') => api.get(`/dcp/doc-template?type=${type}`),
+  uploadTemplate: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT', formData: FormData) =>
     api.post(`/dcp/doc-template?type=${type}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
         Authorization: localStorage.getItem('adminToken') ? `Bearer ${localStorage.getItem('adminToken')}` : '',
       },
     }),
+  // 后台更新某类型模板显示名称（不改内容/版本）
+  renameTemplate: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT', name: string) =>
+    api.post(`/dcp/doc-template/rename?type=${type}`, { name }, {
+      headers: {
+        Authorization: localStorage.getItem('adminToken') ? `Bearer ${localStorage.getItem('adminToken')}` : '',
+      },
+    }),
+  // 工程师直接下载某类最新空白模板（不填编号，占位符保留）
+  downloadTemplateFile: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT') => {
+    const a = document.createElement('a');
+    a.href = `/api/dcp/doc-template/file?type=${type}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
   // 触发浏览器下载已填充的 DCP《设计变更方案》.docx（文件名由后端 Content-Disposition 指定）
   download: (id: number) => {
     const a = document.createElement('a');
@@ -150,8 +166,8 @@ export const dcpAPI = {
     a.click();
     document.body.removeChild(a);
   },
-  // 按类型下载已填充文档（type: DCP / IMPACT / RISK），版本按申请时间对应
-  downloadDoc: (type: 'DCP' | 'IMPACT' | 'RISK', id: number) => {
+  // 按类型下载已填充文档（type: DCP / IMPACT / RISK / VERIFY / IMPLEMENT），版本按申请时间对应
+  downloadDoc: (type: 'DCP' | 'IMPACT' | 'RISK' | 'VERIFY' | 'IMPLEMENT', id: number) => {
     const a = document.createElement('a');
     a.href = `/api/dcp/doc/${type}/${id}`;
     a.style.display = 'none';

@@ -68,13 +68,21 @@ async function renderTemplate(tpl, data) {
   return { buf, ext: 'docx', mimeType: DOCX_MIME };
 }
 
-// 支持的文档模板类型
+// 支持的文档模板类型（默认显示名称，后台可改名覆盖）
 const DOC_TEMPLATE_TYPES = {
-  DCP: 'DCP《设计变更方案》',
-  IMPACT: '《变更影响评估表》',
-  RISK: '《风险登记册》',
+  DCP: 'QST-MS04-01-001-R002 B 设计变更方案',
+  IMPACT: 'QST-MS04-01-001-R003 B 变更影响评估表',
+  RISK: 'QST-QP04-02-R005 C 风险登记册',
+  VERIFY: 'QST-MS04-01-001-R006 B 验证模板',
+  IMPLEMENT: 'QST-MS04-01-001-R011-017 B 变更实施表',
 };
 const VALID_TYPES = Object.keys(DOC_TEMPLATE_TYPES);
+
+// 取模板显示名称：优先用后台维护的名称，回退到默认名称
+function getDisplayName(type, tpl) {
+  const name = tpl && tpl.display_name ? tpl.display_name : (DOC_TEMPLATE_TYPES[type] || type);
+  return String(name).replace(/[《》]/g, '').trim();
+}
 
 function normalizeType(raw) {
   if (!raw) return null;
@@ -103,12 +111,14 @@ function uploadDocTemplate(req, res) {
     }
     const db = getDatabase();
     const createdBy = req.admin?.username || req.admin?.id || null;
+    // 名称：后台上传时可指定（支持改名），否则用默认名称
+    const displayName = (req.body && req.body.name && String(req.body.name).trim()) || DOC_TEMPLATE_TYPES[type] || type;
     const info = db.prepare(
-      `INSERT INTO doc_templates (template_type, filename, content, published_at, created_by)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)`
-    ).run(type, originalName, req.file.buffer, createdBy);
+      `INSERT INTO doc_templates (template_type, filename, content, published_at, created_by, display_name)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+    ).run(type, originalName, req.file.buffer, createdBy, displayName);
 
-    return successResponse(res, { id: info.lastInsertRowid, type, filename: originalName, size: req.file.size }, `${DOC_TEMPLATE_TYPES[type]} 模板上传成功（已新增版本）`);
+    return successResponse(res, { id: info.lastInsertRowid, type, filename: originalName, display_name: displayName, size: req.file.size }, `${DOC_TEMPLATE_TYPES[type]} 模板上传成功（已新增版本）`);
   } catch (err) {
     console.error('Upload doc template error:', err);
     return errorResponse(res, 500, '上传模板失败');
@@ -117,21 +127,22 @@ function uploadDocTemplate(req, res) {
 
 /**
  * 获取某类模板元信息（不含二进制内容），供管理员页展示状态与版本历史
- * 类型通过查询参数 ?type=DCP|IMPACT|RISK 指定
+ * 类型通过查询参数 ?type=DCP|IMPACT|RISK|VERIFY|IMPLEMENT 指定
  */
 function getDocTemplateMeta(req, res) {
   try {
     const type = normalizeType(req.query.type);
     if (!type) {
-      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK）');
+      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK / VERIFY / IMPLEMENT）');
     }
     const db = getDatabase();
-    const latest = db.prepare('SELECT id, filename, published_at FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
-    const versions = db.prepare('SELECT id, filename, published_at, created_by FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC').all(type);
+    const latest = db.prepare('SELECT id, filename, published_at, display_name FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
+    const versions = db.prepare('SELECT id, filename, published_at, created_by, display_name FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC').all(type);
     return successResponse(res, {
       type,
       exists: !!latest,
       filename: latest?.filename || null,
+      display_name: latest?.display_name || DOC_TEMPLATE_TYPES[type] || null,
       updated_at: latest?.published_at || null,
       latest_id: latest?.id || null,
       versions,
@@ -147,6 +158,66 @@ function getDocTemplateMeta(req, res) {
  * 使用"申请时间当日或之前发布"的该类型最新模板版本（版本随申请时间对应模板迭代）。
  * 若申请时间早于该类型任何模板发布时间，则不支持下载。
  */
+// 后台更新某类型模板的显示名称（仅改最新版本的名称，不改内容/版本）
+function renameDocTemplate(req, res) {
+  try {
+    const type = normalizeType(req.query.type);
+    if (!type) {
+      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK / VERIFY / IMPLEMENT）');
+    }
+    const name = (req.body && req.body.name && String(req.body.name).trim()) || '';
+    if (!name) {
+      return errorResponse(res, 400, '名称不能为空');
+    }
+    const db = getDatabase();
+    const latest = db.prepare('SELECT id FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
+    if (!latest) {
+      return errorResponse(res, 400, `该类型尚未上传模板，无法改名`);
+    }
+    db.prepare('UPDATE doc_templates SET display_name = ? WHERE id = ?').run(name, latest.id);
+    return successResponse(res, { type, display_name: name }, `${DOC_TEMPLATE_TYPES[type]} 名称已更新为「${name}」`);
+  } catch (err) {
+    console.error('Rename doc template error:', err);
+    return errorResponse(res, 500, '模板改名失败');
+  }
+}
+
+// 工程师直接下载某类最新"空白模板"（不按申请编号填充，占位符保留，供做模板库）
+function downloadTemplateFile(req, res) {
+  try {
+    const type = normalizeType(req.query.type);
+    if (!type) {
+      return errorResponse(res, 400, '非法的模板类型');
+    }
+    const db = getDatabase();
+    const tpl = db.prepare(
+      `SELECT id, content, filename, display_name
+       FROM doc_templates
+       WHERE template_type = ?
+       ORDER BY published_at DESC
+       LIMIT 1`
+    ).get(type);
+    if (!tpl || !tpl.content) {
+      return errorResponse(res, 404, `尚未上传${DOC_TEMPLATE_TYPES[type]}`);
+    }
+
+    const baseName = getDisplayName(type, tpl);
+    const lower = (tpl.filename || '').toLowerCase();
+    const ext = lower.endsWith('.xlsx') ? 'xlsx' : 'docx';
+    const mimeType = ext === 'xlsx' ? XLSX_MIME : DOCX_MIME;
+    const encodedName = encodeURIComponent(`${baseName}.${ext}`);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="template.${ext}"; filename*=UTF-8''${encodedName}`
+    );
+    return res.status(200).send(Buffer.from(tpl.content));
+  } catch (err) {
+    console.error('Download template file error:', err);
+    return errorResponse(res, 500, '下载模板失败');
+  }
+}
+
 async function downloadDoc(req, res) {
   try {
     const type = normalizeType(req.params.type);
@@ -265,6 +336,8 @@ async function downloadBundle(req, res) {
 module.exports = {
   uploadDocTemplate,
   getDocTemplateMeta,
+  renameDocTemplate,
+  downloadTemplateFile,
   downloadDoc,
   downloadDcp,
   downloadBundle,
