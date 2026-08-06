@@ -25,7 +25,7 @@ const FORM_TYPES: { type: DocTemplateType; defaultLabel: string }[] = [
  * 工程师点开后可下载最新空白表单模板（不填编号，占位符保留）。
  */
 export function FormTemplateDownload() {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [list, setList] = useState<TplInfo[]>(
     FORM_TYPES.map((f) => ({ ...f, exists: false }))
   );
@@ -96,7 +96,7 @@ export function FormTemplateDownload() {
                       item.exists ? 'border-slate-200' : 'border-slate-100 bg-slate-50'
                     }`}
                   >
-                    <div className="flex items-start gap-1.5">
+                    <div className="flex items-center gap-1.5">
                       {isXlsx ? (
                         <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
                       ) : (
@@ -110,20 +110,20 @@ export function FormTemplateDownload() {
                       >
                         {name}
                       </span>
+                      <button
+                        type="button"
+                        disabled={!item.exists}
+                        onClick={() => dcpAPI.downloadTemplateFile(item.type)}
+                        title="下载"
+                        className={`inline-flex items-center justify-center h-6 w-6 rounded-md transition shrink-0 ${
+                          item.exists
+                            ? 'bg-green-600 hover:bg-green-700 text-white'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      disabled={!item.exists}
-                      onClick={() => dcpAPI.downloadTemplateFile(item.type)}
-                      className={`mt-1.5 w-full inline-flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition ${
-                        item.exists
-                          ? 'bg-green-600 hover:bg-green-700 text-white'
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      <Download className="h-3 w-3" />
-                      下载
-                    </button>
                   </div>
                 );
               })}
