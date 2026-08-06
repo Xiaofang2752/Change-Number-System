@@ -46,15 +46,6 @@ function DocDownloads({ app }: { app: Application }) {
         >
           下载
         </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="whitespace-nowrap"
-          onClick={() => dcpAPI.downloadBundle(app.id)}
-        >
-          一键下载
-        </Button>
       </div>
 
       {modalOpen && (
