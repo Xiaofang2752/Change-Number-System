@@ -404,7 +404,9 @@ function getApplications(req, res) {
     let query = `SELECT a.*,
       (SELECT t.id FROM doc_templates t WHERE t.template_type = 'DCP' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS dcp_template_id,
       (SELECT t.id FROM doc_templates t WHERE t.template_type = 'IMPACT' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS impact_template_id,
-      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'RISK' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS risk_template_id
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'RISK' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS risk_template_id,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'VERIFY' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS verify_template_id,
+      (SELECT t.id FROM doc_templates t WHERE t.template_type = 'IMPLEMENT' AND DATE(t.published_at) <= DATE(a.created_at) ORDER BY t.published_at DESC LIMIT 1) AS implement_template_id
       FROM applications a`;
     const whereClauses = [];
     const params = [];

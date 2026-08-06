@@ -68,13 +68,21 @@ async function renderTemplate(tpl, data) {
   return { buf, ext: 'docx', mimeType: DOCX_MIME };
 }
 
-// 支持的文档模板类型
+// 支持的文档模板类型（默认显示名称，后台可改名覆盖）
 const DOC_TEMPLATE_TYPES = {
-  DCP: 'DCP《设计变更方案》',
-  IMPACT: '《变更影响评估表》',
-  RISK: '《风险登记册》',
+  DCP: 'QST-MS04-01-001-R002 B 设计变更方案',
+  IMPACT: 'QST-MS04-01-001-R003 B 变更影响评估表',
+  RISK: 'QST-QP04-02-R005 C 风险登记册',
+  VERIFY: 'QST-MS04-01-001-R006 B 验证模板',
+  IMPLEMENT: 'QST-MS04-01-001-R011-017 B 变更实施表',
 };
 const VALID_TYPES = Object.keys(DOC_TEMPLATE_TYPES);
+
+// 取模板显示名称：优先用后台维护的名称，回退到默认名称
+function getDisplayName(type, tpl) {
+  const name = tpl && tpl.display_name ? tpl.display_name : (DOC_TEMPLATE_TYPES[type] || type);
+  return String(name).replace(/[《》]/g, '').trim();
+}
 
 function normalizeType(raw) {
   if (!raw) return null;
@@ -103,12 +111,14 @@ function uploadDocTemplate(req, res) {
     }
     const db = getDatabase();
     const createdBy = req.admin?.username || req.admin?.id || null;
+    // 名称：后台上传时可指定（支持改名），否则用默认名称
+    const displayName = (req.body && req.body.name && String(req.body.name).trim()) || DOC_TEMPLATE_TYPES[type] || type;
     const info = db.prepare(
-      `INSERT INTO doc_templates (template_type, filename, content, published_at, created_by)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)`
-    ).run(type, originalName, req.file.buffer, createdBy);
+      `INSERT INTO doc_templates (template_type, filename, content, published_at, created_by, display_name)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`
+    ).run(type, originalName, req.file.buffer, createdBy, displayName);
 
-    return successResponse(res, { id: info.lastInsertRowid, type, filename: originalName, size: req.file.size }, `${DOC_TEMPLATE_TYPES[type]} 模板上传成功（已新增版本）`);
+    return successResponse(res, { id: info.lastInsertRowid, type, filename: originalName, display_name: displayName, size: req.file.size }, `${DOC_TEMPLATE_TYPES[type]} 模板上传成功（已新增版本）`);
   } catch (err) {
     console.error('Upload doc template error:', err);
     return errorResponse(res, 500, '上传模板失败');
@@ -123,15 +133,16 @@ function getDocTemplateMeta(req, res) {
   try {
     const type = normalizeType(req.query.type);
     if (!type) {
-      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK）');
+      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK / VERIFY / IMPLEMENT）');
     }
     const db = getDatabase();
-    const latest = db.prepare('SELECT id, filename, published_at FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
-    const versions = db.prepare('SELECT id, filename, published_at, created_by FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC').all(type);
+    const latest = db.prepare('SELECT id, filename, published_at, display_name FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
+    const versions = db.prepare('SELECT id, filename, published_at, created_by, display_name FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC').all(type);
     return successResponse(res, {
       type,
       exists: !!latest,
       filename: latest?.filename || null,
+      display_name: latest?.display_name || DOC_TEMPLATE_TYPES[type] || null,
       updated_at: latest?.published_at || null,
       latest_id: latest?.id || null,
       versions,
@@ -139,6 +150,30 @@ function getDocTemplateMeta(req, res) {
   } catch (err) {
     console.error('Get doc template meta error:', err);
     return errorResponse(res, 500, '获取模板信息失败');
+  }
+}
+
+// 后台更新某类型模板的显示名称（仅改最新版本的名称，不改内容/版本）
+function renameDocTemplate(req, res) {
+  try {
+    const type = normalizeType(req.query.type);
+    if (!type) {
+      return errorResponse(res, 400, '缺少或非法的模板类型 type（应为 DCP / IMPACT / RISK / VERIFY / IMPLEMENT）');
+    }
+    const name = (req.body && req.body.name && String(req.body.name).trim()) || '';
+    if (!name) {
+      return errorResponse(res, 400, '名称不能为空');
+    }
+    const db = getDatabase();
+    const latest = db.prepare('SELECT id FROM doc_templates WHERE template_type = ? ORDER BY published_at DESC LIMIT 1').get(type);
+    if (!latest) {
+      return errorResponse(res, 400, `该类型尚未上传模板，无法改名`);
+    }
+    db.prepare('UPDATE doc_templates SET display_name = ? WHERE id = ?').run(name, latest.id);
+    return successResponse(res, { type, display_name: name }, `${DOC_TEMPLATE_TYPES[type]} 名称已更新为「${name}」`);
+  } catch (err) {
+    console.error('Rename doc template error:', err);
+    return errorResponse(res, 500, '模板改名失败');
   }
 }
 
@@ -182,7 +217,7 @@ async function downloadDoc(req, res) {
       return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
     }
 
-    const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
+    const baseName = getDisplayName(type, tpl);
     const encodedName = encodeURIComponent(`${baseName}-${app.full_number}.${rendered.ext}`);
     res.setHeader('Content-Type', rendered.mimeType);
     res.setHeader(
@@ -223,7 +258,7 @@ async function downloadBundle(req, res) {
     const data = buildPlaceholderData(app);
     for (const type of VALID_TYPES) {
       const tpl = db.prepare(
-        `SELECT id, content, filename, published_at
+        `SELECT id, content, filename, published_at, display_name
          FROM doc_templates
          WHERE template_type = ? AND DATE(published_at) <= DATE(?)
          ORDER BY published_at DESC
@@ -238,7 +273,7 @@ async function downloadBundle(req, res) {
         console.error('Render template in bundle error:', renderErr);
         return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
       }
-      const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
+      const baseName = getDisplayName(type, tpl);
       const fileName = `${baseName}-${app.full_number}.${rendered.ext}`;
       zip.file(`${app.full_number}/${fileName}`, rendered.buf);
       added++;
@@ -265,6 +300,7 @@ async function downloadBundle(req, res) {
 module.exports = {
   uploadDocTemplate,
   getDocTemplateMeta,
+  renameDocTemplate,
   downloadDoc,
   downloadDcp,
   downloadBundle,

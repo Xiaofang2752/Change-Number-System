@@ -26,12 +26,35 @@ interface StatsData {
 // DCP 申请记录的操作区：下载（弹出选择表单）/ 一键下载（ZIP，以 DCP 编号命名文件夹）
 function DocDownloads({ app }: { app: Application }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [names, setNames] = useState<Record<string, string>>({});
 
   const available = ([
-    { type: 'DCP' as const, label: 'DCP《设计变更方案》', id: app.dcp_template_id },
-    { type: 'IMPACT' as const, label: '《变更影响评估表》', id: app.impact_template_id },
-    { type: 'RISK' as const, label: '《风险登记册》', id: app.risk_template_id },
+    { type: 'DCP' as const, id: app.dcp_template_id },
+    { type: 'IMPACT' as const, id: app.impact_template_id },
+    { type: 'RISK' as const, id: app.risk_template_id },
+    { type: 'VERIFY' as const, id: app.verify_template_id },
+    { type: 'IMPLEMENT' as const, id: app.implement_template_id },
   ]).filter((x) => x.id);
+
+  // 打开弹窗时拉取各表单真实名称（后台可改名）
+  useEffect(() => {
+    if (!modalOpen) return;
+    let cancelled = false;
+    Promise.all(
+      available.map((x) =>
+        dcpAPI
+          .getTemplateMeta(x.type)
+          .then((res) => ({ type: x.type, name: (res as unknown as { data?: { display_name?: string } }).data?.display_name || x.type }))
+          .catch(() => ({ type: x.type, name: x.type }))
+      )
+    ).then((results) => {
+      if (cancelled) return;
+      const map: Record<string, string> = {};
+      results.forEach((r) => { map[r.type] = r.name; });
+      setNames(map);
+    });
+    return () => { cancelled = true; };
+  }, [modalOpen]);
 
   if (available.length === 0) return <span className="text-muted-foreground">-</span>;
 
@@ -79,8 +102,8 @@ function DocDownloads({ app }: { app: Application }) {
                     dcpAPI.downloadDoc(x.type, app.id);
                   }}
                 >
-                  <span>{x.label}</span>
-                  <span className="text-primary font-medium">下载 ›</span>
+                  <span className="text-left">{names[x.type] || x.type}</span>
+                  <span className="text-primary font-medium shrink-0 ml-2">下载 ›</span>
                 </button>
               ))}
             </div>
