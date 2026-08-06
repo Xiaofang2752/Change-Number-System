@@ -63,8 +63,8 @@ export function DcpTemplateManager() {
   const handleUpload = async () => {
     if (!file || uploading) return;
 
-    if (!file.name.toLowerCase().endsWith('.docx')) {
-      setNotification({ message: '请上传 .docx 格式的 Word 模板', type: 'error' });
+    if (!file.name.toLowerCase().endsWith('.docx') && !file.name.toLowerCase().endsWith('.xlsx')) {
+      setNotification({ message: '请上传 .docx（Word）或 .xlsx（Excel）格式的模板', type: 'error' });
       return;
     }
 
@@ -137,7 +137,7 @@ export function DcpTemplateManager() {
             <div className="flex flex-wrap items-center gap-3">
               <input
                 type="file"
-                accept=".docx"
+                accept=".docx,.xlsx"
                 onChange={(e) => setFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
                 className="block text-sm text-gray-600
                   file:mr-4 file:py-2 file:px-4
@@ -155,7 +155,7 @@ export function DcpTemplateManager() {
             </div>
 
             <div className="text-xs text-muted-foreground leading-relaxed">
-              上传的 Word(.docx) 模板将用于自动生成对应表单。请在模板中使用以下占位符（大括号为英文半角），系统会自动替换为申请内容：
+              上传的 Word(.docx) 或 Excel(.xlsx) 模板将用于生成对应表单。Word 模板请使用以下占位符（大括号为英文半角），系统会自动替换为申请内容；Excel 模板暂按原样下发：
               <div className="mt-2 space-y-1">
                 <div><code className="bg-gray-100 px-1 rounded">{'{dcp_no}'}</code> — DCP 编号（自动填充申请后的编号）</div>
                 <div><code className="bg-gray-100 px-1 rounded">{'{project_code}'}</code> — 项目代号</div>

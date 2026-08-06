@@ -34,8 +34,9 @@ function uploadDocTemplate(req, res) {
       return errorResponse(res, 400, '请上传模板文件');
     }
     const originalName = req.file.originalname || '';
-    if (!originalName.toLowerCase().endsWith('.docx')) {
-      return errorResponse(res, 400, '模板仅支持 .docx 格式的 Word 文档');
+    const lowerName = originalName.toLowerCase();
+    if (!lowerName.endsWith('.docx') && !lowerName.endsWith('.xlsx')) {
+      return errorResponse(res, 400, '模板仅支持 .docx（Word）或 .xlsx（Excel）格式');
     }
     const db = getDatabase();
     const createdBy = req.admin?.username || req.admin?.id || null;
@@ -115,26 +116,35 @@ function downloadDoc(req, res) {
       date: (app.created_at || '').split(' ')[0] || '',
     };
 
-    let doc;
-    try {
-      const zip = new PizZip(tpl.content);
-      doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
-      doc.render(data);
-    } catch (renderErr) {
-      console.error('Render docx error:', renderErr);
-      return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
+    const lowerName = (tpl.filename || '').toLowerCase();
+    const isXlsx = lowerName.endsWith('.xlsx');
+    const ext = isXlsx ? 'xlsx' : 'docx';
+    const mimeType = isXlsx
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : DOCX_MIME;
+
+    let buf;
+    if (isXlsx) {
+      // Excel 模板：直接原样下发（暂不做占位符填充）
+      buf = Buffer.from(tpl.content);
+    } else {
+      try {
+        const zip = new PizZip(tpl.content);
+        const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+        doc.render(data);
+        buf = doc.getZip().generate({ type: 'nodebuffer', mimeType: DOCX_MIME });
+      } catch (renderErr) {
+        console.error('Render docx error:', renderErr);
+        return errorResponse(res, 500, '模板渲染失败，请检查模板中的占位符语法（如 {dcp_no}）');
+      }
     }
 
-    const buf = doc.getZip().generate({
-      type: 'nodebuffer',
-      mimeType: DOCX_MIME,
-    });
-
-    const encodedName = encodeURIComponent(`${DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '')}-${app.full_number}.docx`);
-    res.setHeader('Content-Type', DOCX_MIME);
+    const baseName = DOC_TEMPLATE_TYPES[type].replace(/[《》]/g, '');
+    const encodedName = encodeURIComponent(`${baseName}-${app.full_number}.${ext}`);
+    res.setHeader('Content-Type', mimeType);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="doc.docx"; filename*=UTF-8''${encodedName}`
+      `attachment; filename="doc.${ext}"; filename*=UTF-8''${encodedName}`
     );
     return res.status(200).send(buf);
   } catch (err) {

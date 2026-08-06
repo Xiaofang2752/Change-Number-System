@@ -133,9 +133,9 @@ export const applicationAPI = {
 };
 
 export const dcpAPI = {
-  getTemplateMeta: (type: 'DCP' | 'IMPACT' | 'RISK') => api.get(`/doc-template?type=${type}`),
+  getTemplateMeta: (type: 'DCP' | 'IMPACT' | 'RISK') => api.get(`/dcp/doc-template?type=${type}`),
   uploadTemplate: (type: 'DCP' | 'IMPACT' | 'RISK', formData: FormData) =>
-    api.post(`/doc-template?type=${type}`, formData, {
+    api.post(`/dcp/doc-template?type=${type}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
         Authorization: localStorage.getItem('adminToken') ? `Bearer ${localStorage.getItem('adminToken')}` : '',
@@ -153,7 +153,7 @@ export const dcpAPI = {
   // 按类型下载已填充文档（type: DCP / IMPACT / RISK），版本按申请时间对应
   downloadDoc: (type: 'DCP' | 'IMPACT' | 'RISK', id: number) => {
     const a = document.createElement('a');
-    a.href = `/api/doc/${type}/${id}`;
+    a.href = `/api/dcp/doc/${type}/${id}`;
     a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
