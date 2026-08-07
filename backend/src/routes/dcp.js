@@ -9,7 +9,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 // 管理员上传 / 查看文档模板（按 ?type=DCP|IMPACT|RISK|VERIFY|IMPLEMENT 区分类型）
 // 注意：/doc-template 需在 /:id 之前注册
 router.post('/doc-template', authMiddleware, upload.single('file'), dcpController.uploadDocTemplate);
-router.get('/doc-template', authMiddleware, dcpController.getDocTemplateMeta);
+// 模板元信息（是否存在/版本）对工程师也开放，仅上传/改名等写操作需管理员
+router.get('/doc-template', optionalAuthMiddleware, dcpController.getDocTemplateMeta);
 // 管理员更新某类型模板的显示名称（不改内容/版本）
 router.post('/doc-template/rename', authMiddleware, dcpController.renameDocTemplate);
 // 工程师直接下载某类最新空白模板（不填编号，占位符保留），无需登录
